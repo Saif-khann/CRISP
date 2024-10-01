@@ -1,0 +1,15 @@
+# Normalise line endings so the repository stays consistent across
+# Windows, macOS and Linux checkouts.
+* text=auto eol=lf
+
+# Shell scripts must keep LF endings to remain executable on Linux.
+*.sh text eol=lf
+
+# Treat these as binary so git never attempts line-ending conversion.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.keras binary
+*.onnx binary
+*.h5 binary

@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Environment Variables
+.env
+
+# Firebase Service Account (sensitive)
+config/*.json
+
+# Uploaded Files
+static/uploads/*
+!static/uploads/.gitkeep
+
+# ML Models (large binaries tracked via Git LFS)
+# Uncomment if you don't want models in git:
+# models/*.keras
+# models/*.onnx
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary Files
+*.tmp
+*.bak
+
+# CRISP application database (SQLite)
+data/
+*.sqlite3
+crisp.db
+
+# Model weights (distributed via GitHub Releases, see download_models.py)
+models/
+
+# Local editor/tooling configuration
+.claude/
