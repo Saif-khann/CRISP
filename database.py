@@ -136,3 +136,88 @@ def get_connection():
         raise
     finally:
         conn.close()
+
+
+def init_db():
+    """Create tables if they don't exist. Safe to call on every boot."""
+    with get_connection() as conn:
+        conn.executescript(SCHEMA)
+        try:
+            conn.execute('PRAGMA journal_mode = WAL')
+        except sqlite3.Error:
+            # WAL is unavailable on some network/container filesystems;
+            # the default rollback journal still works correctly.
+            logger.debug("Could not enable WAL journal mode; using default.")
+    logger.info("SQLite database ready at %s", DB_PATH)
+
+
+# ---------------------------------------------------------------------------
+# Users
+# ---------------------------------------------------------------------------
+
+
+def _row_to_user(row):
+    if row is None:
+        return None
+    return {
+        'id': row['id'],
+        'user_id': row['id'],
+        'email': row['email'],
+        'role': row['role'],
+        'display_name': row['display_name'],
+        'status': row['status'],
+        'is_demo': bool(row['is_demo']),
+        'created_at': _parse_ts(row['created_at']),
+    }
+
+
+def create_user(email, password, role='worker', display_name=None, is_demo=False):
+    """Create a user with a hashed password. Raises ValueError on invalid
+    input and on duplicate email."""
+    email = (email or '').strip()
+    if not email:
+        raise ValueError("Email is required")
+    if not password:
+        raise ValueError("Password is required")
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+    if role not in VALID_ROLES:
+        raise ValueError("Role must be 'expert' or 'worker'")
+
+    user_id = f'usr-{uuid.uuid4().hex[:12]}'
+    record = (
+        user_id,
+        email,
+        generate_password_hash(password),
+        role,
+        display_name or email.split('@')[0],
+        'active',
+        1 if is_demo else 0,
+        _utcnow_iso(),
+    )
+
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                'INSERT INTO users (id, email, password_hash, role, display_name,'
+                ' status, is_demo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                record
+            )
+    except sqlite3.IntegrityError as exc:
+        raise ValueError("An account with that email already exists") from exc
+
+    return user_id
+
+
+def get_user_by_email(email):
+    with get_connection() as conn:
+        row = conn.execute(
+            'SELECT * FROM users WHERE email = ? COLLATE NOCASE', ((email or '').strip(),)
+        ).fetchone()
+    return _row_to_user(row)
+
+
+def get_user(user_id):
+    with get_connection() as conn:
+        row = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+    return _row_to_user(row)
