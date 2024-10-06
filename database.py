@@ -221,3 +221,82 @@ def get_user(user_id):
     with get_connection() as conn:
         row = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
     return _row_to_user(row)
+
+
+def verify_user(email, password):
+    """Return the user dict if the credentials are valid, else None.
+
+    Always runs a hash comparison even when the account doesn't exist, so
+    a missing account and a wrong password take the same amount of time
+    and can't be told apart by timing.
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            'SELECT * FROM users WHERE email = ? COLLATE NOCASE', ((email or '').strip(),)
+        ).fetchone()
+
+    if row is None:
+        # Dummy comparison to equalise response time with the found case.
+        check_password_hash(
+            'pbkdf2:sha256:600000$dummysaltvalue$'
+            '0000000000000000000000000000000000000000000000000000000000000000',
+            password or ''
+        )
+        return None
+
+    if not check_password_hash(row['password_hash'], password or ''):
+        return None
+
+    if row['status'] != 'active':
+        return None
+
+    return _row_to_user(row)
+
+
+# ---------------------------------------------------------------------------
+# Projects
+# ---------------------------------------------------------------------------
+
+
+def _row_to_project(row):
+    if row is None:
+        return None
+    return {
+        'id': row['id'],
+        'user_id': row['user_id'],
+        'name': row['name'],
+        'description': row['description'],
+        'location': row['location'],
+        'start_date': row['start_date'],
+        'end_date': row['end_date'],
+        'latitude': row['latitude'],
+        'longitude': row['longitude'],
+        'status': row['status'],
+        'current_stage': row['current_stage'],
+        'current_sub_stage': row['current_sub_stage'],
+        'created_at': _parse_ts(row['created_at']),
+    }
+
+
+def create_project(user_id, name, description, location, start_date, end_date,
+                   latitude, longitude):
+    project_id = f'proj-{uuid.uuid4().hex[:10]}'
+    with get_connection() as conn:
+        conn.execute(
+            'INSERT INTO projects (id, user_id, name, description, location,'
+            ' start_date, end_date, latitude, longitude, status, current_stage,'
+            ' current_sub_stage, created_at)'
+            ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (project_id, user_id, name, description, location, start_date,
+             end_date, latitude, longitude, 'active', None, None, _utcnow_iso())
+        )
+    return project_id
+
+
+def list_projects(user_id):
+    with get_connection() as conn:
+        rows = conn.execute(
+            'SELECT * FROM projects WHERE user_id = ? ORDER BY created_at DESC',
+            (user_id,)
+        ).fetchall()
+    return [_row_to_project(r) for r in rows]
