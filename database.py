@@ -300,3 +300,61 @@ def list_projects(user_id):
             (user_id,)
         ).fetchall()
     return [_row_to_project(r) for r in rows]
+
+
+def get_project(user_id, project_id):
+    """Scoped by user_id on purpose - a guessed project id belonging to
+    someone else returns None rather than their data."""
+    with get_connection() as conn:
+        row = conn.execute(
+            'SELECT * FROM projects WHERE id = ? AND user_id = ?',
+            (project_id, user_id)
+        ).fetchone()
+    return _row_to_project(row)
+
+
+def update_project_stage(user_id, project_id, stage, sub_stage):
+    with get_connection() as conn:
+        conn.execute(
+            'UPDATE projects SET current_stage = ?, current_sub_stage = ?'
+            ' WHERE id = ? AND user_id = ?',
+            (stage, sub_stage, project_id, user_id)
+        )
+
+
+def delete_project(user_id, project_id):
+    with get_connection() as conn:
+        cur = conn.execute(
+            'DELETE FROM projects WHERE id = ? AND user_id = ?',
+            (project_id, user_id)
+        )
+    return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Validations
+# ---------------------------------------------------------------------------
+
+
+def _row_to_validation(row):
+    if row is None:
+        return None
+    stage_conf = row['stage_confidence']
+    global_conf = row['global_confidence']
+    return {
+        'id': row['id'],
+        'project_id': row['project_id'],
+        'user_id': row['user_id'],
+        'primary_stage': row['primary_stage'],
+        'specific_classification': row['specific_classification'],
+        'stage_confidence': f'{stage_conf:.2f}',
+        'global_confidence': f'{global_conf:.2f}',
+        'image_path': row['image_path'],
+        'ai_description': row['ai_description'],
+        'timestamp': _parse_ts(row['timestamp']),
+        # Kept for template/JS compatibility with the previous shape.
+        'confidence_scores': {
+            'Stage Confidence': f'{stage_conf:.2f}',
+            'Global Stage Confidence': f'{global_conf:.2f}',
+        },
+    }
