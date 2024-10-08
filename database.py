@@ -358,3 +358,46 @@ def _row_to_validation(row):
             'Global Stage Confidence': f'{global_conf:.2f}',
         },
     }
+
+
+def create_validation(user_id, project_id, primary_stage, specific_classification,
+                      stage_confidence, global_confidence, image_path,
+                      ai_description=None):
+    validation_id = f'val-{uuid.uuid4().hex[:10]}'
+    with get_connection() as conn:
+        conn.execute(
+            'INSERT INTO validations (id, project_id, user_id, primary_stage,'
+            ' specific_classification, stage_confidence, global_confidence,'
+            ' image_path, ai_description, timestamp)'
+            ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (validation_id, project_id, user_id, primary_stage,
+             specific_classification, float(stage_confidence),
+             float(global_confidence), image_path, ai_description, _utcnow_iso())
+        )
+    return validation_id
+
+
+def list_validations(user_id, project_id, limit=None):
+    query = ('SELECT * FROM validations WHERE project_id = ? AND user_id = ?'
+             ' ORDER BY timestamp DESC')
+    params = [project_id, user_id]
+    if limit:
+        query += ' LIMIT ?'
+        params.append(limit)
+    with get_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [_row_to_validation(r) for r in rows]
+
+
+def get_validation(user_id, validation_id):
+    with get_connection() as conn:
+        row = conn.execute(
+            'SELECT * FROM validations WHERE id = ? AND user_id = ?',
+            (validation_id, user_id)
+        ).fetchone()
+    return _row_to_validation(row)
+
+
+def get_latest_validation(user_id, project_id):
+    results = list_validations(user_id, project_id, limit=1)
+    return results[0] if results else None
