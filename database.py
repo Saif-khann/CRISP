@@ -401,3 +401,69 @@ def get_validation(user_id, validation_id):
 def get_latest_validation(user_id, project_id):
     results = list_validations(user_id, project_id, limit=1)
     return results[0] if results else None
+
+
+def count_validations(user_id):
+    with get_connection() as conn:
+        row = conn.execute(
+            'SELECT COUNT(*) AS n FROM validations WHERE user_id = ?', (user_id,)
+        ).fetchone()
+    return row['n'] if row else 0
+
+
+# ---------------------------------------------------------------------------
+# Login throttling
+#
+# Held in the database rather than in a module-level dict so that a lockout
+# is not cleared by a process restart and is shared across workers.
+# ---------------------------------------------------------------------------
+
+
+def get_login_attempts(throttle_key):
+    """Return (attempts, first_seen_datetime) or (0, None) if unseen."""
+    with get_connection() as conn:
+        row = conn.execute(
+            'SELECT attempts, first_seen FROM login_attempts WHERE throttle_key = ?',
+            (throttle_key,)
+        ).fetchone()
+    if row is None:
+        return 0, None
+    return row['attempts'], _parse_ts(row['first_seen'])
+
+
+def record_login_failure(throttle_key, window_seconds):
+    """Increment the failure counter, restarting the window if it expired."""
+    now = datetime.now(timezone.utc)
+    attempts, first_seen = get_login_attempts(throttle_key)
+
+    if first_seen is None or (now - first_seen).total_seconds() > window_seconds:
+        attempts, first_seen = 0, now
+
+    with get_connection() as conn:
+        conn.execute(
+            'INSERT INTO login_attempts (throttle_key, attempts, first_seen, last_seen)'
+            ' VALUES (?, ?, ?, ?)'
+            ' ON CONFLICT(throttle_key) DO UPDATE SET'
+            ' attempts = excluded.attempts,'
+            ' first_seen = excluded.first_seen,'
+            ' last_seen = excluded.last_seen',
+            (throttle_key, attempts + 1, first_seen.isoformat(), now.isoformat())
+        )
+    return attempts + 1
+
+
+def clear_login_attempts(throttle_key):
+    with get_connection() as conn:
+        conn.execute('DELETE FROM login_attempts WHERE throttle_key = ?', (throttle_key,))
+
+
+def purge_stale_login_attempts(window_seconds):
+    """Drop expired throttle rows so the table cannot grow without bound."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=window_seconds)).isoformat()
+    with get_connection() as conn:
+        conn.execute('DELETE FROM login_attempts WHERE last_seen < ?', (cutoff,))
+
+
+# ---------------------------------------------------------------------------
+# Authentication audit log
+# ---------------------------------------------------------------------------
