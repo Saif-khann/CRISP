@@ -155,7 +155,6 @@ def init_db():
 # Users
 # ---------------------------------------------------------------------------
 
-
 def _row_to_user(row):
     if row is None:
         return None
@@ -257,7 +256,6 @@ def verify_user(email, password):
 # Projects
 # ---------------------------------------------------------------------------
 
-
 def _row_to_project(row):
     if row is None:
         return None
@@ -334,7 +332,6 @@ def delete_project(user_id, project_id):
 # ---------------------------------------------------------------------------
 # Validations
 # ---------------------------------------------------------------------------
-
 
 def _row_to_validation(row):
     if row is None:
@@ -418,7 +415,6 @@ def count_validations(user_id):
 # is not cleared by a process restart and is shared across workers.
 # ---------------------------------------------------------------------------
 
-
 def get_login_attempts(throttle_key):
     """Return (attempts, first_seen_datetime) or (0, None) if unseen."""
     with get_connection() as conn:
@@ -467,3 +463,73 @@ def purge_stale_login_attempts(window_seconds):
 # ---------------------------------------------------------------------------
 # Authentication audit log
 # ---------------------------------------------------------------------------
+
+def record_auth_event(event, email=None, user_id=None, ip_address=None,
+                      user_agent=None, detail=None):
+    """Append an authentication event. Never raises: an audit write failing
+    must not take down the request that triggered it."""
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                'INSERT INTO auth_events (timestamp, event, email, user_id,'
+                ' ip_address, user_agent, detail) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (_utcnow_iso(), event, email, user_id, ip_address,
+                 (user_agent or '')[:300] or None, detail)
+            )
+    except sqlite3.Error as exc:
+        logger.warning("Could not record auth event %r: %s", event, exc)
+
+
+def list_auth_events(limit=100, email=None):
+    query = 'SELECT * FROM auth_events'
+    params = []
+    if email:
+        query += ' WHERE email = ?'
+        params.append(email)
+    query += ' ORDER BY timestamp DESC LIMIT ?'
+    params.append(limit)
+    with get_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [{
+        'id': r['id'],
+        'timestamp': _parse_ts(r['timestamp']),
+        'event': r['event'],
+        'email': r['email'],
+        'user_id': r['user_id'],
+        'ip_address': r['ip_address'],
+        'user_agent': r['user_agent'],
+        'detail': r['detail'],
+    } for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Password management
+# ---------------------------------------------------------------------------
+
+def change_password(user_id, current_password, new_password):
+    """Change a password after verifying the current one.
+
+    Raises ValueError with a user-safe message on any failure.
+    """
+    if not new_password:
+        raise ValueError("Enter a new password")
+    if len(new_password) < 8:
+        raise ValueError("The new password must be at least 8 characters long")
+
+    with get_connection() as conn:
+        row = conn.execute(
+            'SELECT password_hash FROM users WHERE id = ?', (user_id,)
+        ).fetchone()
+
+    if row is None:
+        raise ValueError("Account not found")
+    if not check_password_hash(row['password_hash'], current_password or ''):
+        raise ValueError("Your current password is incorrect")
+    if check_password_hash(row['password_hash'], new_password):
+        raise ValueError("The new password must be different from the current one")
+
+    with get_connection() as conn:
+        conn.execute(
+            'UPDATE users SET password_hash = ? WHERE id = ?',
+            (generate_password_hash(new_password), user_id)
+        )
