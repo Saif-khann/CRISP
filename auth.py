@@ -91,3 +91,16 @@ def is_locked_out(email):
         database.clear_login_attempts(_throttle_key(email))
         return False
     return True
+
+
+def record_failed_attempt(email):
+    return database.record_login_failure(_throttle_key(email), LOCKOUT_SECONDS)
+
+
+def clear_failed_attempts(email):
+    database.clear_login_attempts(_throttle_key(email))
+
+
+# ---------------------------------------------------------------------------
+# Audit logging
+# ---------------------------------------------------------------------------
