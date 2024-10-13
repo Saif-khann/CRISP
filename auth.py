@@ -104,3 +104,24 @@ def clear_failed_attempts(email):
 # ---------------------------------------------------------------------------
 # Audit logging
 # ---------------------------------------------------------------------------
+
+
+def audit(event, email=None, user_id=None, detail=None):
+    database.record_auth_event(
+        event=event,
+        email=email,
+        user_id=user_id,
+        ip_address=request.remote_addr,
+        user_agent=request.headers.get('User-Agent'),
+        detail=detail,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Accounts
+# ---------------------------------------------------------------------------
+
+
+def create_user(email, password, role='worker', display_name=None):
+    """Register a new account. Raises ValueError with a user-safe message."""
+    return database.create_user(email, password, role, display_name)
