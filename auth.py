@@ -37,7 +37,6 @@ CSRF_HEADER = 'X-CSRFToken'
 # same-site injection and browsers that mishandle SameSite.
 # ---------------------------------------------------------------------------
 
-
 def get_csrf_token():
     """Return this session's CSRF token, creating one on first use."""
     token = session.get(CSRF_SESSION_KEY)
@@ -74,7 +73,6 @@ def wants_json():
 # Login throttling
 # ---------------------------------------------------------------------------
 
-
 def _throttle_key(email):
     return f"{request.remote_addr or 'unknown'}|{(email or '').strip().lower()}"
 
@@ -105,7 +103,6 @@ def clear_failed_attempts(email):
 # Audit logging
 # ---------------------------------------------------------------------------
 
-
 def audit(event, email=None, user_id=None, detail=None):
     database.record_auth_event(
         event=event,
@@ -121,7 +118,76 @@ def audit(event, email=None, user_id=None, detail=None):
 # Accounts
 # ---------------------------------------------------------------------------
 
-
 def create_user(email, password, role='worker', display_name=None):
     """Register a new account. Raises ValueError with a user-safe message."""
     return database.create_user(email, password, role, display_name)
+
+
+def verify_user(email, password):
+    """Return the user dict on valid credentials, else None."""
+    return database.verify_user(email, password)
+
+
+def establish_session(user):
+    """Populate the session for an authenticated user.
+
+    The session is cleared first so a pre-authentication session identifier
+    can never be carried over, and a fresh CSRF token is issued.
+    """
+    session.clear()
+    session['user_id'] = user['id']
+    session['email'] = user['email']
+    session['role'] = user['role']
+    session['display_name'] = user['display_name']
+    session['is_demo'] = user.get('is_demo', False)
+    session[CSRF_SESSION_KEY] = secrets.token_urlsafe(32)
+    session.permanent = True
+
+
+# ---------------------------------------------------------------------------
+# Route guards
+# ---------------------------------------------------------------------------
+
+def login_required(f):
+    """Require an authenticated session.
+
+    Redirects silently. This fires on an ordinary first visit to a
+    protected URL as often as on an expired session, and greeting a new
+    visitor with a red error banner reads as broken rather than helpful.
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            if wants_json():
+                return jsonify({'success': False,
+                                'error': 'Please sign in first.'}), 401
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def role_required(allowed_roles):
+    """Require one of the given roles.
+
+    Accepts a single role string ('expert') or a list. A bare string is
+    treated as one exact role, never as a substring-match target.
+    """
+    if isinstance(allowed_roles, str):
+        allowed_roles = [allowed_roles]
+
+    def decorator(f):
+        @wraps(f)
+        @login_required
+        def decorated_function(*args, **kwargs):
+            user_role = session.get('role')
+            if not user_role or user_role not in allowed_roles:
+                if wants_json():
+                    return jsonify({
+                        'success': False,
+                        'error': 'You do not have permission to do that.'
+                    }), 403
+                flash('You do not have permission to access that page.', 'error')
+                return redirect(url_for('dashboard'))
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
