@@ -260,3 +260,115 @@ body {
     line-height: 1.2;
 }
 
+/* --------------------------------------------------------------------------
+   Stage Timeline Stepper
+   -------------------------------------------------------------------------- */
+.stage-stepper {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    padding: 1.5rem 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.stage-stepper::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 2rem;
+    right: 2rem;
+    height: 3px;
+    background: var(--bg-subtle);
+    z-index: 1;
+    transform: translateY(-50%);
+}
+
+.stage-step {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+    cursor: default;
+}
+
+.step-node {
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-full);
+    background: var(--bg-surface);
+    border: 2px solid var(--border-medium);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    transition: all var(--transition-smooth);
+}
+
+.stage-step.active .step-node {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #ffffff;
+    box-shadow: 0 0 0 5px var(--primary-glow);
+    transform: scale(1.1);
+}
+
+.stage-step.completed .step-node {
+    background: var(--success);
+    border-color: var(--success);
+    color: #ffffff;
+}
+
+.step-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.stage-step.active .step-label {
+    color: var(--primary);
+    font-weight: 700;
+}
+
+/* --------------------------------------------------------------------------
+   Upload Dropzone
+   -------------------------------------------------------------------------- */
+.upload-dropzone {
+    border: 2px dashed var(--border-medium);
+    border-radius: var(--radius-lg);
+    background: var(--bg-subtle);
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all var(--transition-smooth);
+    position: relative;
+}
+
+.upload-dropzone:hover {
+    border-color: var(--primary);
+    background: var(--primary-subtle);
+}
+
+.upload-dropzone.dragover {
+    border-color: var(--primary);
+    background: #e0e7ff;
+    box-shadow: 0 0 0 6px var(--primary-glow);
+}
+
+.upload-icon {
+    font-size: 2.5rem;
+    color: var(--primary);
+    margin-bottom: 0.75rem;
+    transition: transform var(--transition-bounce);
+}
+
+.upload-dropzone:hover .upload-icon {
+    transform: translateY(-4px);
+}
+
