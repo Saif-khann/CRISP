@@ -462,3 +462,91 @@ body {
     font-size: 0.75rem;
 }
 
+/* --------------------------------------------------------------------------
+   Badges & Chips
+   -------------------------------------------------------------------------- */
+.badge {
+    font-weight: 600;
+    font-size: 0.75rem;
+    padding: 0.35rem 0.65rem;
+    border-radius: var(--radius-full);
+    letter-spacing: 0.02em;
+}
+
+.badge-primary { background: var(--primary-subtle); color: var(--primary); }
+.badge-success { background: var(--success-subtle); color: var(--success); }
+.badge-warning { background: var(--warning-subtle); color: var(--warning); }
+.badge-danger  { background: var(--danger-subtle);  color: var(--danger);  }
+
+.sample-chip {
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-full);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-medium);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.sample-chip:hover {
+    background: var(--primary-subtle);
+    border-color: var(--primary);
+    color: var(--primary);
+    transform: translateY(-1px);
+}
+
+/* One sample is deliberately mislabeled to demonstrate the mismatch
+   check - a dashed warning-toned border sets it apart without being
+   loud about it. */
+.sample-chip-mismatch {
+    border-style: dashed;
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #92400e;
+}
+
+.sample-chip-mismatch:hover {
+    background: var(--warning-subtle);
+    border-color: var(--warning);
+    color: #92400e;
+}
+
+/* --------------------------------------------------------------------------
+   Alerts & Notifications
+   -------------------------------------------------------------------------- */
+.alert {
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    padding: 1rem 1.25rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.alert-success {
+    background: var(--success-subtle);
+    border-color: rgba(16, 185, 129, 0.2);
+    color: #065f46;
+}
+
+.alert-info {
+    background: var(--info-subtle);
+    border-color: rgba(14, 165, 233, 0.2);
+    color: #0369a1;
+}
+
+.alert-warning {
+    background: var(--warning-subtle);
+    border-color: rgba(245, 158, 11, 0.2);
+    color: #92400e;
+}
+
+.alert-danger {
+    background: var(--danger-subtle);
+    border-color: rgba(239, 68, 68, 0.2);
+    color: #991b1b;
+}
+
