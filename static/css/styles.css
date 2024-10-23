@@ -578,3 +578,16 @@ body {
     background-color: var(--bg-subtle);
 }
 
+/* --------------------------------------------------------------------------
+   Error Pages
+   -------------------------------------------------------------------------- */
+.error-code {
+    font-family: var(--font-mono);
+    font-size: 3.5rem;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--text-muted);
+    opacity: 0.35;
+    margin-bottom: 0.75rem;
+}
+
