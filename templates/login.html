@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Login - CRISP{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="text-center mb-4">
+                <h3 class="fw-bold mb-1">Sign in to CRISP</h3>
+                <p class="text-muted small mb-0">Construction stage recognition & progress intelligence</p>
+            </div>
+
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <form method="POST" action="{{ url_for('login') }}">
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="email" name="email" required autocomplete="email" placeholder="name@example.com">
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required autocomplete="current-password" placeholder="Enter your password">
+                        </div>
+                        <div class="d-grid mt-4">
+                            <button type="submit" class="btn btn-primary">Login</button>
+                        </div>
+                    </form>
+                    <div class="text-center mt-3">
+                        <p class="text-muted small mb-0">Don't have an account? <a href="{{ url_for('signup') }}">Sign up</a></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Secondary, lower-emphasis affordance - not a competing product -->
+            {% if demo_enabled %}
+            <div class="text-center mt-3">
+                <p class="small text-muted mb-2">Just here to look around?</p>
+                <div class="d-flex gap-2 justify-content-center">
+                    <a href="{{ url_for('demo_login', role='expert') }}" class="sample-chip">
+                        <i class="fas fa-user-tie"></i> Try it as Expert
+                    </a>
+                    <a href="{{ url_for('demo_login', role='worker') }}" class="sample-chip">
+                        <i class="fas fa-helmet-safety"></i> Try it as Worker
+                    </a>
+                </div>
+                <p class="small text-muted mt-2 mb-0" style="opacity: 0.75;">
+                    Signs you in to a shared demo account with sample projects.
+                </p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
