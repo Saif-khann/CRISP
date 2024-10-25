@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}{{ code }} - CRISP{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-7 col-lg-6 text-center py-5">
+            <div class="error-code">{{ code }}</div>
+            <h4 class="fw-bold mb-2">{{ message }}</h4>
+            <p class="text-muted small mb-4">
+                {% if code == 404 %}
+                    The page you're looking for may have been moved or removed.
+                {% else %}
+                    The issue has been logged. Please try again in a moment.
+                {% endif %}
+            </p>
+            <a href="{{ url_for('dashboard') if session.get('user_id') else url_for('login') }}"
+               class="btn btn-primary">
+                <i class="fas fa-arrow-left me-1"></i>
+                {{ 'Back to dashboard' if session.get('user_id') else 'Back to sign in' }}
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
