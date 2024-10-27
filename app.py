@@ -232,6 +232,25 @@ def enforce_csrf():
     return redirect(request.referrer or url_for('login'))
 
 
+@app.after_request
+def set_security_headers(response):
+    """Baseline hardening headers.
+
+    No Content-Security-Policy here: the templates rely on inline scripts
+    and CDN-hosted Bootstrap/Leaflet, so a meaningful policy would need
+    those refactored first. Claiming one that had to be loosened into
+    uselessness would be worse than not setting it.
+    """
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'DENY')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    if IS_PRODUCTION:
+        response.headers.setdefault(
+            'Strict-Transport-Security', 'max-age=31536000; includeSubDomains'
+        )
+    return response
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
