@@ -251,6 +251,54 @@ def set_security_headers(response):
     return response
 
 
+@app.before_request
+def ensure_models_loaded():
+    """Load models on the first request that needs them.
+
+    'compare_progress' is intentionally excluded - it only reads
+    previously-stored validation results and never runs inference,
+    so it shouldn't trigger a multi-second TensorFlow model load.
+    """
+    if not MODELS_LOADED and request.endpoint in (
+        'validate_image', 'validate_project_images'
+    ):
+        load_models()
+
+
+# ---------------------------------------------------------------------------
+# Construction stage definitions & weights
+# ---------------------------------------------------------------------------
+stages = {
+    "facade": [
+        "Exterior_Cladding_and_Finishes",
+        "Window_and_Door_Installation",
+        "exterior_wall_construction",
+    ],
+    "finishing works": [
+        "Painting",
+        "fixture installation",
+        "Millwork and carpentry"
+    ],
+    "foundation": [
+        "Excavation",
+        "Reinforcement Placement",
+        "concrete curing",
+        "concrete_pouring"
+    ],
+    "Interior": [
+        "Ceiling Installation",
+        "Flooring Installation",
+        "Staircase Finishing"
+    ],
+    "superstructure": [
+        "Roof_Decking",
+        "Stair Case",
+        "Structural_Frame_Erection_(framing)",
+        "Structural_Wall_Construction",
+    ],
+}
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
