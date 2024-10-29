@@ -299,6 +299,46 @@ stages = {
 }
 
 
+stage_weights = {
+    "foundation": 20,
+    "superstructure": 30,
+    "facade": 20,
+    "Interior": 15,
+    "finishing works": 15
+}
+
+
+sub_stage_weights = {
+    "foundation": {
+        "Excavation": 25,
+        "Reinforcement Placement": 25,
+        "concrete curing": 25,
+        "concrete_pouring": 25
+    },
+    "superstructure": {
+        "Roof_Decking": 15,
+        "Stair Case": 20,
+        "Structural_Frame_Erection_(framing)": 40,
+        "Structural_Wall_Construction": 25
+    },
+    "facade": {
+        "Exterior_Cladding_and_Finishes": 25,
+        "Window_and_Door_Installation": 35,
+        "exterior_wall_construction": 40
+    },
+    "Interior": {
+        "Ceiling Installation": 35,
+        "Flooring Installation": 35,
+        "Staircase Finishing": 30
+    },
+    "finishing works": {
+        "Painting": 35,
+        "fixture installation": 35,
+        "Millwork and carpentry": 30
+    }
+}
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
