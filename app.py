@@ -339,6 +339,21 @@ sub_stage_weights = {
 }
 
 
+STAGE_ORDER = [
+    "foundation", "superstructure", "facade", "Interior", "finishing works"
+]
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+
+def get_timezone():
+    """Get the configured timezone object."""
+    import pytz
+    return pytz.timezone(APP_TIMEZONE)
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
