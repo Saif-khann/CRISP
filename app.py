@@ -354,6 +354,20 @@ def get_timezone():
     return pytz.timezone(APP_TIMEZONE)
 
 
+def allowed_file(filename):
+    return '.' in filename and \
+        filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _round1(value):
+    """Round to 1 decimal place using round-half-up, to match how
+    JavaScript's toFixed(1) rounds an exact .x5 tie - Python's own
+    round()/"%.1f" use banker's rounding and can land on a different
+    digit for the same number. See calculate_progress() for why this
+    matters here specifically."""
+    return math.floor(value * 10 + 0.5) / 10
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
