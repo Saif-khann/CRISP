@@ -368,6 +368,44 @@ def _round1(value):
     return math.floor(value * 10 + 0.5) / 10
 
 
+def _normalize_image_url(path):
+    """Convert a stored server-side image path into a static/ URL suffix."""
+    if not path:
+        return ''
+    if 'uploads' in path:
+        return f"uploads/{os.path.basename(path)}"
+    if 'demo_samples' in path:
+        return f"demo_samples/{os.path.basename(path)}"
+    return path
+
+
+def _decorate_progress(project, user_id):
+    """Attach live progress fields derived from the project's most recent
+    validation. Progress is always computed from validation history rather
+    than stored denormalised, so it can never drift out of sync."""
+    latest = database.get_latest_validation(user_id, project['id'])
+
+    if latest:
+        stage = latest['primary_stage']
+        sub_stage = latest['specific_classification']
+        stage_progress, overall, completed = calculate_progress(stage, sub_stage)
+        project['current_stage'] = stage
+        project['current_sub_stage'] = sub_stage
+        project['stage_progress'] = stage_progress
+        project['progress_percentage'] = overall
+        project['completed_stages'] = completed
+        project['last_updated'] = latest['timestamp']
+    else:
+        project['current_stage'] = project.get('current_stage') or 'Not started'
+        project['current_sub_stage'] = project.get('current_sub_stage') or ''
+        project['stage_progress'] = 0
+        project['progress_percentage'] = 0
+        project['completed_stages'] = []
+        project['last_updated'] = None
+
+    return project
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
