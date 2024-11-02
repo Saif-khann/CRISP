@@ -406,6 +406,21 @@ def _decorate_progress(project, user_id):
     return project
 
 
+def _save_upload(file_storage):
+    """Persist an upload under a collision-proof name and return its path.
+
+    secure_filename alone is not enough: two users uploading 'site.jpg'
+    would overwrite each other's evidence photos, and a validation record
+    written yesterday would silently start pointing at someone else's
+    image. Prefixing a random token keeps every record's image immutable.
+    """
+    safe_name = secure_filename(file_storage.filename) or 'upload.jpg'
+    unique_name = f"{uuid.uuid4().hex[:12]}_{safe_name}"
+    path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
+    file_storage.save(path)
+    return path
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
