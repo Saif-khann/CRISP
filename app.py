@@ -421,6 +421,58 @@ def _save_upload(file_storage):
     return path
 
 
+def _discard_upload(path):
+    """Delete an upload that isn't going to be referenced by any record."""
+    try:
+        if path and os.path.exists(path):
+            os.remove(path)
+    except OSError as exc:
+        logger.warning("Could not remove temporary upload %s: %s", path, exc)
+
+
+# ---------------------------------------------------------------------------
+# ML prediction functions
+# ---------------------------------------------------------------------------
+
+
+def ensemble_predict(image):
+    """Run ensemble prediction across MobileNet, Inception, and VGG16."""
+    import tensorflow as tf
+
+    if not MODELS_LOADED:
+        raise ValueError("Models not loaded")
+
+    inception_preprocessed = tf.image.resize(image, (299, 299))
+    inception_preprocessed = tf.cast(inception_preprocessed, tf.float32) / 255.0
+    inception_preprocessed = tf.reshape(inception_preprocessed, (1, 299, 299, 3))
+
+    mobilenet_preprocessed = tf.image.resize(image, (224, 224))
+    mobilenet_preprocessed = tf.cast(mobilenet_preprocessed, tf.float32) / 255.0
+    mobilenet_preprocessed = tf.reshape(mobilenet_preprocessed, (1, 224, 224, 3))
+
+    vgg_preprocessed = tf.image.resize(image, (224, 224))
+    vgg_preprocessed = tf.cast(vgg_preprocessed, tf.float32) / 255.0
+    vgg_preprocessed = tf.reshape(vgg_preprocessed, (1, 224, 224, 3))
+
+    mobilenet_output = global_mobilenet.predict(mobilenet_preprocessed, verbose=0)[0]
+    inception_output = global_inception.predict(inception_preprocessed, verbose=0)[0]
+    vgg_output = global_vgg.predict(vgg_preprocessed, verbose=0)[0]
+
+    ensemble_output = (
+        0.3 * mobilenet_output +
+        0.4 * inception_output +
+        0.3 * vgg_output
+    )
+
+    predicted_stage_index = np.argmax(ensemble_output)
+    confidence_score = float(ensemble_output[predicted_stage_index] * 100)
+
+    stage_list = list(stages.keys())
+    predicted_stage = stage_list[predicted_stage_index]
+
+    return predicted_stage, confidence_score
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
