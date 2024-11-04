@@ -473,6 +473,51 @@ def ensemble_predict(image):
     return predicted_stage, confidence_score
 
 
+def classify_stage(image, selected_stage):
+    """Classify the sub-stage within a given stage."""
+    import tensorflow as tf
+
+    if not MODELS_LOADED or selected_stage not in stage_specific_models:
+        raise ValueError("Models not loaded or invalid stage")
+
+    if selected_stage == "facade":
+        preprocessed = tf.image.resize(image, (299, 299))
+    else:
+        preprocessed = tf.image.resize(image, (224, 224))
+
+    preprocessed = tf.cast(preprocessed, tf.float32) / 255.0
+    preprocessed = tf.expand_dims(preprocessed, axis=0)
+
+    model = stage_specific_models[selected_stage]
+    predictions = model.predict(preprocessed, verbose=0)[0]
+
+    predicted_index = np.argmax(predictions)
+    confidence = float(predictions[predicted_index] * 100)
+
+    sub_stages = stages[selected_stage]
+    predicted_sub_stage = sub_stages[predicted_index]
+
+    return predicted_sub_stage, confidence
+
+
+def _predict_and_classify(image_array, selected_stage):
+    """Run the ensemble global-stage predictor and the stage-specific
+    sub-stage classifier on one preprocessed image array.
+
+    Shared by validate_image and validate_project_images (demo
+    direct-upload path) - both ran this exact pair of calls
+    independently before.
+    """
+    predicted_stage, global_confidence = ensemble_predict(image_array)
+    predicted_sub_stage, sub_stage_confidence = classify_stage(image_array, selected_stage)
+    return predicted_stage, global_confidence, predicted_sub_stage, sub_stage_confidence
+
+
+# ---------------------------------------------------------------------------
+# AI image description: OpenAI-compatible gateway -> Gemini -> offline fallback
+# ---------------------------------------------------------------------------
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
