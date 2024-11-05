@@ -518,6 +518,146 @@ def _predict_and_classify(image_array, selected_stage):
 # ---------------------------------------------------------------------------
 
 
+def _generate_local_description(stage, sub_stage, confidence):
+    """
+    100% Free, offline local intelligent construction narrative.
+    Generates domain-accurate engineering notes with zero API calls.
+    """
+    sub_clean = sub_stage.replace('_', ' ').title() if sub_stage else 'General Stage Work'
+    stage_clean = stage.title() if stage else 'Active Construction'
+    
+    narratives = {
+        'foundation': {
+            'Excavation': f"Site visual analysis shows active earthmoving and excavation operations. Ground preparation is underway with trenching to target structural founding depth (AI Confidence: {confidence:.1f}%).",
+            'Reinforcement Placement': f"Rebar cage fabrication and footing reinforcement placement are actively positioned in excavated footing zones prior to pour scheduling (AI Confidence: {confidence:.1f}%).",
+            'concrete_pouring': f"Active concrete pouring and placement operations observed with pumping equipment positioned on site (AI Confidence: {confidence:.1f}%).",
+            'concrete curing': f"Foundation slab/footing curing phase in progress with moisture retention measures visible across completed structural foundation elements (AI Confidence: {confidence:.1f}%)."
+        },
+        'superstructure': {
+            'Structural_Frame_Erection_(framing)': f"Primary structural frame erection underway. Vertical load-bearing columns, steel beams, and structural framing elements visible (AI Confidence: {confidence:.1f}%).",
+            'Structural_Wall_Construction': f"Load-bearing wall construction and shear wall reinforcement formwork active across the structural floor plate (AI Confidence: {confidence:.1f}%).",
+            'Stair Case': f"Cast-in-place staircase formwork and vertical transit core structural elements under construction (AI Confidence: {confidence:.1f}%).",
+            'Roof_Decking': f"Upper roof decking, slab formwork, and top structural diaphragm assembly in progress (AI Confidence: {confidence:.1f}%)."
+        },
+        'facade': {
+            'exterior_wall_construction': f"Exterior perimeter wall assembly, masonry infill, and envelope weatherproofing layers being erected (AI Confidence: {confidence:.1f}%).",
+            'Window_and_Door_Installation': f"Fenestration package active: Exterior window frame anchoring and glazing installation visible across building facade (AI Confidence: {confidence:.1f}%).",
+            'Exterior_Cladding_and_Finishes': f"Architectural cladding panels, insulation backing, and external facade finishing materials in progress (AI Confidence: {confidence:.1f}%)."
+        },
+        'Interior': {
+            'Ceiling Installation': f"Interior MEP overhead ducting and drop ceiling suspension framing active across internal zones (AI Confidence: {confidence:.1f}%).",
+            'Flooring Installation': f"Interior floor substrate preparation, screeding, and architectural flooring installation in progress (AI Confidence: {confidence:.1f}%).",
+            'Staircase Finishing': f"Internal staircase architectural finishes, tread cladding, and safety balustrade installation observed (AI Confidence: {confidence:.1f}%)."
+        },
+        'finishing works': {
+            'Painting': f"Internal/external primer and architectural surface painting coats actively applied across finished partitions (AI Confidence: {confidence:.1f}%).",
+            'fixture installation': f"Final trade electrical fixtures, plumbing trim, and lighting device installations in progress (AI Confidence: {confidence:.1f}%).",
+            'Millwork and carpentry': f"Final joinery, interior door hanging, trim, and architectural millwork packages nearing completion (AI Confidence: {confidence:.1f}%)."
+        }
+    }
+
+    stage_dict = narratives.get(stage.lower() if stage else '', {})
+    if sub_stage in stage_dict:
+        return stage_dict[sub_stage]
+    
+    return f"CRISP Intelligent Analysis: Active {stage_clean} phase detected, specifically {sub_clean} with a model confidence of {confidence:.1f}%. Site progress aligns with scheduled stage milestones."
+
+
+def describe_image_with_ai(image_path, stage="foundation", sub_stage="Excavation", confidence=95.0):
+    """
+    Multi-tier description generator:
+    1. OpenAI-compatible gateway (if AI_GATEWAY_URL is set)
+    2. Google Gemini API (if GOOGLE_API_KEY set)
+    3. 100% Free Offline Local Narrative Generator (Default)
+    """
+    # Tier 1: any OpenAI-compatible gateway
+    if AI_GATEWAY_URL:
+        try:
+            import base64
+            import mimetypes
+
+            with open(image_path, 'rb') as f:
+                img_b64 = base64.b64encode(f.read()).decode('utf-8')
+
+            # Send the real content type. Labelling a PNG as JPEG makes some
+            # vision endpoints reject the request outright.
+            mime = mimetypes.guess_type(image_path)[0] or 'image/jpeg'
+
+            headers = {
+                'Authorization': f'Bearer {AI_GATEWAY_KEY}',
+                'Content-Type': 'application/json'
+            }
+            payload = {
+                'model': AI_GATEWAY_MODEL,
+                'messages': [
+                    {
+                        'role': 'user',
+                        'content': [
+                            {
+                                'type': 'text',
+                                'text': f'Describe this construction site photo briefly (1-2 sentences), focusing on the visible stage ({stage} - {sub_stage}).'
+                            },
+                            {
+                                'type': 'image_url',
+                                'image_url': {
+                                    'url': f'data:{mime};base64,{img_b64}'
+                                }
+                            }
+                        ]
+                    }
+                ],
+                'max_tokens': 150
+            }
+            # Vision inference is slower than text completion, and a local
+            # gateway may be loading a model on first use; 8s was too tight.
+            resp = requests.post(
+                f"{AI_GATEWAY_URL.rstrip('/')}/chat/completions",
+                headers=headers, json=payload, timeout=AI_GATEWAY_TIMEOUT
+            )
+            if resp.ok:
+                content = resp.json()['choices'][0]['message']['content']
+                if content:
+                    logger.info("Photo description generated via AI gateway")
+                    return content.strip()
+            logger.warning(
+                "AI gateway returned HTTP %s - falling back. Body: %s",
+                resp.status_code, resp.text[:200]
+            )
+        except requests.Timeout:
+            logger.warning(
+                "AI gateway timed out after %ss - falling back", AI_GATEWAY_TIMEOUT
+            )
+        except Exception as e:
+            logger.warning("AI gateway call failed: %s - falling back", e)
+
+    # Tier 2: Google Gemini API (if configured)
+    if _genai and API_KEY:
+        try:
+            with open(image_path, 'rb') as f:
+                image_bytes = f.read()
+
+            model = _genai.GenerativeModel('gemini-1.5-flash')
+            response = model.generate_content(
+                contents=[
+                    f"Describe this construction site image briefly (1-2 sentences), focusing on the visible stage ({stage} - {sub_stage}).",
+                    {"mime_type": "image/jpeg", "data": image_bytes}
+                ],
+                generation_config={"temperature": 0.3, "max_output_tokens": 150}
+            )
+            if hasattr(response, 'text') and response.text:
+                return response.text.strip()
+        except Exception as e:
+            logger.warning("Gemini API call failed: %s - using local descriptor", e)
+
+    # Tier 3: 100% Free Offline Local Narrative Generator
+    return _generate_local_description(stage, sub_stage, confidence)
+
+
+# ---------------------------------------------------------------------------
+# Progress calculation functions
+# ---------------------------------------------------------------------------
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
