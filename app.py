@@ -658,6 +658,51 @@ def describe_image_with_ai(image_path, stage="foundation", sub_stage="Excavation
 # ---------------------------------------------------------------------------
 
 
+def calculate_progress(stage, sub_stage):
+    """Calculate stage-level and overall project progress."""
+    if stage not in stages or sub_stage not in stages[stage]:
+        return 0, 0, []
+
+    stage_sub_stages = stages[stage]
+    current_index = stage_sub_stages.index(sub_stage)
+
+    stage_progress = 0
+    for i in range(current_index + 1):
+        sstg = stage_sub_stages[i]
+        stage_progress += sub_stage_weights[stage][sstg]
+
+    current_stage_index = STAGE_ORDER.index(stage) + 1
+
+    overall_progress = 0
+    completed_stages = []
+
+    for s in STAGE_ORDER:
+        if STAGE_ORDER.index(s) + 1 < current_stage_index:
+            overall_progress += stage_weights[s]
+            completed_stages.append(s)
+
+    stage_contribution = (stage_weights[stage] * (stage_progress / 100.0))
+    overall_progress += stage_contribution
+
+    if stage_progress == 100:
+        completed_stages.append(stage)
+
+    completed_stages.sort(key=lambda x: STAGE_ORDER.index(x) + 1)
+
+    # Round once, here, at the source. overall_progress is a weighted sum
+    # of integer percentages (e.g. 15 * 0.35 = 5.25) and lands on an exact
+    # .x5 tie constantly. Left unrounded, Python's "%.1f" (banker's
+    # rounding) and JS's toFixed(1) (round-half-away-from-zero) disagree
+    # on which way to round that tie - e.g. one showing 90.2%, the other
+    # 90.3% for the same underlying number. Rounding once here means
+    # every caller (the JSON payload, the text summary, the dashboards)
+    # displays the same already-decided digit instead of re-rounding the
+    # raw float differently.
+    overall_progress = _round1(overall_progress)
+
+    return stage_progress, overall_progress, completed_stages
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
