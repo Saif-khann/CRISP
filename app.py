@@ -703,6 +703,124 @@ def calculate_progress(stage, sub_stage):
     return stage_progress, overall_progress, completed_stages
 
 
+def get_progress_message(prev_stage, prev_sub_stage, curr_stage, curr_sub_stage):
+    """Generate a human-readable progress comparison message."""
+    prev_stage_progress, prev_overall_progress, prev_completed = \
+        calculate_progress(prev_stage, prev_sub_stage)
+    curr_stage_progress, curr_overall_progress, curr_completed = \
+        calculate_progress(curr_stage, curr_sub_stage)
+
+    prev_stage_idx = STAGE_ORDER.index(prev_stage) + 1
+    curr_stage_idx = STAGE_ORDER.index(curr_stage) + 1
+
+    overall_progress_diff = curr_overall_progress - prev_overall_progress
+
+    if curr_stage_idx < prev_stage_idx:
+        status = 'invalid'
+        message = [
+            f"Invalid progress: Cannot move from {prev_stage} "
+            f"(Stage {prev_stage_idx}) to {curr_stage} (Stage {curr_stage_idx})",
+            "Construction stages must proceed in order."
+        ]
+        return status, "\n".join(message)
+
+    if curr_overall_progress > prev_overall_progress:
+        status = 'advanced'
+        message = [
+            f"Progress has advanced from Stage {prev_stage_idx}: "
+            f"{prev_stage} ({prev_sub_stage}) to Stage {curr_stage_idx}: "
+            f"{curr_stage} ({curr_sub_stage})"
+        ]
+        newly_completed = set(curr_completed) - set(prev_completed)
+        if newly_completed:
+            completed_info = [
+                f"Stage {STAGE_ORDER.index(s)+1}: {s}"
+                for s in sorted(newly_completed, key=lambda x: STAGE_ORDER.index(x))
+            ]
+            message.append(f"Completed stages: {', '.join(completed_info)} (100%)")
+
+        message.append(
+            f"Current Stage {curr_stage_idx} ({curr_stage}) is "
+            f"{curr_stage_progress:.1f}% complete "
+            f"(contributing {((stage_weights[curr_stage] * curr_stage_progress) / 100.0):.1f}% "
+            f"to overall progress)"
+        )
+
+        message.append("Project Progress Breakdown:")
+        for completed_stage in curr_completed:
+            if completed_stage == curr_stage and curr_stage_progress < 100:
+                partial = (stage_weights[curr_stage] * (curr_stage_progress / 100.0))
+                message.append(
+                    f"- Stage {curr_stage_idx}: {curr_stage}: "
+                    f"{curr_stage_progress:.1f}% "
+                    f"(contributing {partial:.1f}% out of possible "
+                    f"{stage_weights[curr_stage]}%)"
+                )
+            else:
+                idx = STAGE_ORDER.index(completed_stage) + 1
+                message.append(
+                    f"- Stage {idx}: {completed_stage}: 100% "
+                    f"(contributing {stage_weights[completed_stage]}%)"
+                )
+
+        message.append(
+            f"Overall project is {curr_overall_progress:.1f}% complete "
+            f"(+{overall_progress_diff:.1f}%)"
+        )
+
+    elif curr_overall_progress == prev_overall_progress:
+        status = 'same'
+        message = [
+            f"No progress detected. Staying at Stage {curr_stage_idx}: "
+            f"{curr_stage} ({curr_sub_stage})",
+            f"Current stage is {curr_stage_progress:.1f}% complete",
+            f"Overall project is {curr_overall_progress:.1f}% complete"
+        ]
+    else:
+        status = 'regressed'
+        message = [
+            f"Progress has regressed from Stage {prev_stage_idx}: "
+            f"{prev_stage} ({prev_sub_stage}) to Stage {curr_stage_idx}: "
+            f"{curr_stage} ({curr_sub_stage})",
+            f"Current stage ({curr_stage}) is {curr_stage_progress:.1f}% complete",
+            f"Overall project is {curr_overall_progress:.1f}% complete "
+            f"({overall_progress_diff:.1f}% change)"
+        ]
+
+    return status, "\n".join(message)
+
+# ---------------------------------------------------------------------------
+# Routes: Authentication
+# ---------------------------------------------------------------------------
+
+
+@app.route('/demo-login')
+def demo_login():
+    """Sign in to a real, pre-seeded demo account.
+
+    This is a genuine login against a real hashed-password account in the
+    database - not an auth bypass. The demo accounts own their own seeded
+    projects, so exploring the demo can never touch another user's data.
+    Disable entirely with ALLOW_DEMO_LOGIN=false.
+    """
+    if os.getenv('ALLOW_DEMO_LOGIN', 'true').lower() != 'true':
+        flash('Demo access is disabled on this deployment.', 'error')
+        return redirect(url_for('login'))
+
+    role = request.args.get('role', 'expert')
+    if role not in ('expert', 'worker'):
+        role = 'expert'
+
+    user = database.get_user_by_email(DEMO_ACCOUNTS[role]['email'])
+    if not user:
+        flash('Demo account is unavailable. Please sign up instead.', 'error')
+        return redirect(url_for('login'))
+
+    establish_session(user)
+    flash(f'Signed in to the {role} demo account.', 'success')
+    return redirect(url_for(f'{role}_dashboard'))
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
