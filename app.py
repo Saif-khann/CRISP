@@ -821,6 +821,76 @@ def demo_login():
     return redirect(url_for(f'{role}_dashboard'))
 
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    # Someone already signed in has no business on the sign-in form.
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip()
+        password = request.form.get('password', '')
+
+        if not email or not password:
+            flash('Please enter both your email and password.', 'error')
+            return render_template('login.html'), 400
+
+        if is_locked_out(email):
+            audit('login_blocked', email=email, detail='rate limited')
+            flash(
+                'Too many failed sign-in attempts. Please wait a few minutes '
+                'and try again.', 'error'
+            )
+            return render_template('login.html'), 429
+
+        user = verify_user(email, password)
+        if not user:
+            attempts = record_failed_attempt(email)
+            audit('login_failed', email=email, detail=f'attempt {attempts}')
+            # Deliberately vague: naming which half was wrong would let an
+            # attacker enumerate which emails have accounts.
+            flash('Incorrect email or password.', 'error')
+            return render_template('login.html'), 401
+
+        clear_failed_attempts(email)
+        establish_session(user)
+        audit('login_success', email=user['email'], user_id=user['id'])
+        logger.info("User signed in: %s (%s)", user['email'], user['role'])
+        return redirect(url_for(f"{user['role']}_dashboard"))
+
+    return render_template('login.html')
+
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip()
+        password = request.form.get('password', '')
+        role = request.form.get('role', '')
+
+        try:
+            user_id = create_user(email, password, role)
+        except ValueError as exc:
+            flash(str(exc), 'error')
+            return render_template('signup.html'), 400
+        except Exception as exc:
+            logger.error("Signup failed for %s: %s", email, exc)
+            flash('Could not create the account. Please try again.', 'error')
+            return render_template('signup.html'), 500
+
+        user = database.get_user(user_id)
+        establish_session(user)
+        audit('signup', email=email, user_id=user_id, detail=f'role {role}')
+        logger.info("Account created: %s (%s)", email, role)
+        flash('Welcome to CRISP! Your account is ready.', 'success')
+        return redirect(url_for(f"{role}_dashboard"))
+
+    return render_template('signup.html')
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
