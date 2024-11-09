@@ -891,6 +891,52 @@ def signup():
     return render_template('signup.html')
 
 
+@app.route('/logout')
+@login_required
+def logout():
+    audit('logout', email=session.get('email'), user_id=session.get('user_id'))
+    session.clear()
+    flash('You have been signed out.', 'info')
+    return redirect(url_for('login'))
+
+
+@app.route('/account', methods=['GET', 'POST'])
+@login_required
+def account():
+    """Account settings: change password, review recent sign-in activity."""
+    user_id = session['user_id']
+
+    if request.method == 'POST':
+        current_password = request.form.get('current_password', '')
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        if new_password != confirm_password:
+            flash('The new passwords do not match.', 'error')
+        else:
+            try:
+                database.change_password(user_id, current_password, new_password)
+            except ValueError as exc:
+                audit('password_change_failed', email=session.get('email'),
+                      user_id=user_id, detail=str(exc))
+                flash(str(exc), 'error')
+            else:
+                audit('password_changed', email=session.get('email'),
+                      user_id=user_id)
+                flash('Your password has been updated.', 'success')
+                return redirect(url_for('account'))
+
+    return render_template(
+        'account.html',
+        events=database.list_auth_events(limit=15, email=session.get('email')),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes: Dashboards
+# ---------------------------------------------------------------------------
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
