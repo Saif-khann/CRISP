@@ -937,6 +937,29 @@ def account():
 # ---------------------------------------------------------------------------
 
 
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    return redirect(
+        url_for('expert_dashboard' if session.get('role') == 'expert'
+                else 'worker_dashboard')
+    )
+
+
+@app.route('/expert_dashboard')
+@role_required('expert')
+def expert_dashboard():
+    user_id = session['user_id']
+    projects = [_decorate_progress(p, user_id) for p in database.list_projects(user_id)]
+    return render_template(
+        'expert_dashboard.html',
+        projects=projects,
+        user_id=user_id,
+        user_role='expert',
+        total_validations=database.count_validations(user_id),
+    )
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
