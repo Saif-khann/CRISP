@@ -974,6 +974,94 @@ def worker_dashboard():
     )
 
 
+@app.route('/')
+@app.route('/home')
+@login_required
+def home():
+    project_id = request.args.get('project_id')
+    if not project_id:
+        return redirect(url_for('dashboard'))
+
+    user_id = session['user_id']
+    project = database.get_project(user_id, project_id)
+    if not project:
+        flash('That project could not be found.', 'error')
+        return redirect(url_for('dashboard'))
+
+    _decorate_progress(project, user_id)
+    validations = database.list_validations(user_id, project_id)
+
+    return render_template(
+        'home.html',
+        project=project,
+        validations=validations,
+        stages=stages,
+        user_role=session.get('role'),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes: Projects
+# ---------------------------------------------------------------------------
+
+
+@app.route('/create_project', methods=['POST'])
+@login_required
+def create_project():
+    try:
+        name = (request.form.get('name') or '').strip()
+        description = (request.form.get('description') or '').strip()
+        location = (request.form.get('location') or '').strip()
+        start_date = (request.form.get('start_date') or '').strip()
+        end_date = (request.form.get('end_date') or '').strip()
+        latitude = request.form.get('latitude', type=float)
+        longitude = request.form.get('longitude', type=float)
+
+        missing = [
+            label for label, value in (
+                ('name', name), ('description', description),
+                ('location', location), ('start date', start_date),
+                ('target completion date', end_date),
+            ) if not value
+        ]
+        if latitude is None:
+            missing.append('latitude')
+        if longitude is None:
+            missing.append('longitude')
+        if missing:
+            return jsonify({
+                'success': False,
+                'error': f"Please provide: {', '.join(missing)}."
+            }), 400
+
+        if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
+            return jsonify({
+                'success': False,
+                'error': 'Coordinates are out of range. Latitude must be '
+                         'between -90 and 90, longitude between -180 and 180.'
+            }), 400
+
+        if end_date < start_date:
+            return jsonify({
+                'success': False,
+                'error': 'The target completion date cannot be before the start date.'
+            }), 400
+
+        project_id = database.create_project(
+            session['user_id'], name, description, location,
+            start_date, end_date, latitude, longitude
+        )
+        return jsonify({
+            'success': True,
+            'message': 'Project created.',
+            'project_id': project_id,
+        }), 201
+
+    except Exception as exc:
+        logger.error("Error creating project: %s", exc)
+        return jsonify({'success': False, 'error': 'Could not create the project.'}), 500
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
