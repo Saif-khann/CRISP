@@ -1062,6 +1062,33 @@ def create_project():
         return jsonify({'success': False, 'error': 'Could not create the project.'}), 500
 
 
+@app.route('/project/<project_id>/delete', methods=['POST'])
+@login_required
+def delete_project(project_id):
+    if database.delete_project(session['user_id'], project_id):
+        flash('Project deleted.', 'success')
+    else:
+        flash('That project could not be found.', 'error')
+    return redirect(url_for('dashboard'))
+
+
+# ---------------------------------------------------------------------------
+# Routes: AI validation
+# ---------------------------------------------------------------------------
+
+
+@app.route('/project/<project_id>/validate', methods=['GET'])
+@login_required
+def validate_project_images(project_id):
+    """The validation workspace for a project.
+
+    This used to duplicate the whole inference pipeline for its POST
+    branch; uploads now go through /validate_image exclusively, so there
+    is one code path for classification instead of two that could drift.
+    """
+    return redirect(url_for('home', project_id=project_id))
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
