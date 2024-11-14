@@ -1089,6 +1089,206 @@ def validate_project_images(project_id):
     return redirect(url_for('home', project_id=project_id))
 
 
+@app.route('/validate_image', methods=['POST'])
+@login_required
+def validate_image():
+    """Classify an uploaded site photo and record the validation."""
+    filepath = None
+    try:
+        if not MODELS_LOADED:
+            absent = missing_model_files()
+            if absent:
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        f'{len(absent)} model weight file(s) are missing. '
+                        "Run 'python download_models.py' to fetch them, then restart."
+                    )
+                }), 503
+            return jsonify({
+                'success': False,
+                'error': 'The AI models are still loading. Please try again in a moment.'
+            }), 503
+
+        user_id = session['user_id']
+        project_id = request.form.get('project_id')
+        selected_stage = request.form.get('stage')
+        proceed = request.form.get('proceed', 'false').lower() in ('true', 'on', '1', 'yes')
+        describe = request.form.get('describe', 'false').lower() in ('true', 'on', '1', 'yes')
+
+        if not project_id:
+            return jsonify({'success': False, 'error': 'No project specified.'}), 400
+
+        project = database.get_project(user_id, project_id)
+        if not project:
+            return jsonify({'success': False, 'error': 'Project not found.'}), 404
+
+        if selected_stage not in stages:
+            return jsonify({'success': False, 'error': 'Please choose a valid construction stage.'}), 400
+
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file uploaded.'}), 400
+
+        file = request.files['file']
+        if not file.filename:
+            return jsonify({'success': False, 'error': 'No file selected.'}), 400
+        if not allowed_file(file.filename):
+            return jsonify({'success': False, 'error': 'Invalid file type. Use PNG, JPG or JPEG.'}), 400
+
+        filepath = _save_upload(file)
+
+        try:
+            image = Image.open(filepath).convert('RGB')
+        except Exception:
+            return jsonify({'success': False, 'error': 'That file could not be read as an image.'}), 400
+
+        image_array = np.array(image)
+        predicted_stage, global_confidence = ensemble_predict(image_array)
+
+        if predicted_stage.lower() != selected_stage.lower() and not proceed:
+            # Not recorded - remove the upload rather than leaving orphans.
+            _discard_upload(filepath)
+            filepath = None
+            return jsonify({
+                'success': False,
+                'mismatch': True,
+                'message': (
+                    f"The photo looks like '{predicted_stage}' "
+                    f"({global_confidence:.1f}% confidence), but you selected "
+                    f"'{selected_stage}'."
+                )
+            }), 200
+
+        predicted_class, stage_confidence = classify_stage(image_array, selected_stage)
+
+        description = None
+        if describe:
+            description = describe_image_with_ai(
+                filepath, selected_stage, predicted_class, stage_confidence
+            )
+
+        validation_id = database.create_validation(
+            user_id=user_id,
+            project_id=project_id,
+            primary_stage=selected_stage,
+            specific_classification=predicted_class,
+            stage_confidence=stage_confidence,
+            global_confidence=global_confidence,
+            image_path=filepath,
+            ai_description=description,
+        )
+        database.update_project_stage(user_id, project_id, selected_stage, predicted_class)
+
+        _, overall_progress, _ = calculate_progress(selected_stage, predicted_class)
+        tz = get_timezone()
+
+        return jsonify({
+            'success': True,
+            'message': (
+                f"Matched stage '{selected_stage}'. Sub-stage: "
+                f"'{predicted_class}' ({stage_confidence:.1f}% confidence)."
+            ),
+            'validation_id': validation_id,
+            'primary_stage': selected_stage,
+            'specific_classification': predicted_class,
+            'confidence_scores': {
+                'Stage Confidence': f"{stage_confidence:.2f}",
+                'Global Stage Confidence': f"{global_confidence:.2f}",
+            },
+            'overall_progress': overall_progress,
+            'description': description,
+            'timestamp': datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S %Z'),
+        }), 200
+
+    except Exception as exc:
+        logger.exception("Error during image validation")
+        if filepath:
+            _discard_upload(filepath)
+        return jsonify({'success': False, 'error': 'Could not process that image.'}), 500
+
+
+@app.route('/compare', methods=['POST'])
+@login_required
+def compare_progress():
+    """Compare two recorded validations for the same project."""
+    try:
+        user_id = session['user_id']
+        project_id = request.form.get('project_id')
+        previous_id = request.form.get('previous_doc_id')
+        current_id = request.form.get('current_doc_id')
+
+        if not all([project_id, previous_id, current_id]):
+            return jsonify({'success': False, 'error': 'Select both milestones to compare.'}), 400
+
+        if previous_id == current_id:
+            return jsonify({
+                'success': False,
+                'error': 'Select two different milestones to compare.'
+            }), 400
+
+        if not database.get_project(user_id, project_id):
+            return jsonify({'success': False, 'error': 'Project not found.'}), 404
+
+        prev_data = database.get_validation(user_id, previous_id)
+        curr_data = database.get_validation(user_id, current_id)
+        if not prev_data or not curr_data:
+            return jsonify({'success': False, 'error': 'One of those milestones no longer exists.'}), 404
+
+        if prev_data['project_id'] != project_id or curr_data['project_id'] != project_id:
+            return jsonify({
+                'success': False,
+                'error': 'Those milestones belong to a different project.'
+            }), 400
+
+        # Order by time so "previous" is genuinely the earlier record, no
+        # matter which way round the two dropdowns were filled in.
+        if prev_data['timestamp'] and curr_data['timestamp'] and \
+                prev_data['timestamp'] > curr_data['timestamp']:
+            prev_data, curr_data = curr_data, prev_data
+
+        prev_stage = prev_data['primary_stage']
+        prev_sub = prev_data['specific_classification']
+        curr_stage = curr_data['primary_stage']
+        curr_sub = curr_data['specific_classification']
+
+        status, progress_message = get_progress_message(
+            prev_stage, prev_sub, curr_stage, curr_sub
+        )
+        prev_stage_p, prev_overall_p, prev_comp = calculate_progress(prev_stage, prev_sub)
+        curr_stage_p, curr_overall_p, curr_comp = calculate_progress(curr_stage, curr_sub)
+
+        def _fmt(ts):
+            return ts.strftime('%Y-%m-%d %H:%M') if ts else 'Unknown'
+
+        return jsonify({
+            'success': True,
+            'previous': {
+                'stage': prev_stage,
+                'sub_stage': prev_sub,
+                'stage_progress': prev_stage_p,
+                'overall_progress': prev_overall_p,
+                'completed_stages': prev_comp,
+                'timestamp': _fmt(prev_data['timestamp']),
+                'image_path': _normalize_image_url(prev_data['image_path']),
+            },
+            'current': {
+                'stage': curr_stage,
+                'sub_stage': curr_sub,
+                'stage_progress': curr_stage_p,
+                'overall_progress': curr_overall_p,
+                'completed_stages': curr_comp,
+                'timestamp': _fmt(curr_data['timestamp']),
+                'image_path': _normalize_image_url(curr_data['image_path']),
+            },
+            'progress_status': status,
+            'progress_message': progress_message,
+        })
+
+    except Exception as exc:
+        logger.exception("Error in compare_progress")
+        return jsonify({'success': False, 'error': 'Could not compare those milestones.'}), 500
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
