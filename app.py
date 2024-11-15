@@ -1289,6 +1289,140 @@ def compare_progress():
         return jsonify({'success': False, 'error': 'Could not compare those milestones.'}), 500
 
 
+@app.route('/generate_report/<validation_id>', methods=['GET'])
+@login_required
+def generate_report(validation_id):
+    """Produce a PDF audit report for a recorded validation."""
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.platypus import (
+            SimpleDocTemplate, Paragraph, Spacer, Image as RLImage
+        )
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+        user_id = session['user_id']
+        validation = database.get_validation(user_id, validation_id)
+        if not validation:
+            flash('That validation record could not be found.', 'error')
+            return redirect(url_for('dashboard'))
+
+        project = database.get_project(user_id, validation['project_id'])
+        stage_p, overall_p, _ = calculate_progress(
+            validation['primary_stage'], validation['specific_classification']
+        )
+
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            doc = SimpleDocTemplate(tmp.name, pagesize=letter)
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                'CustomTitle', parent=styles['Heading1'], fontSize=20, spaceAfter=18
+            )
+            story = [
+                Paragraph('CRISP - Construction Stage Analysis Report', title_style),
+                Paragraph(
+                    f"Generated: {datetime.now(get_timezone()).strftime('%Y-%m-%d %H:%M:%S %Z')}",
+                    styles['Normal']
+                ),
+                Spacer(1, 12),
+            ]
+
+            if project:
+                story += [
+                    Paragraph('Project', styles['Heading2']),
+                    Paragraph(f"<b>Name:</b> {project['name']}", styles['Normal']),
+                    Paragraph(f"<b>Location:</b> {project['location'] or 'N/A'}", styles['Normal']),
+                    Spacer(1, 10),
+                ]
+
+            image_path = validation.get('image_path')
+            if image_path and os.path.exists(image_path):
+                try:
+                    story += [RLImage(image_path, width=380, height=260), Spacer(1, 12)]
+                except Exception:
+                    logger.warning("Could not embed %s in the report", image_path)
+
+            recorded = validation['timestamp']
+            story += [
+                Paragraph('Stage Analysis', styles['Heading2']),
+                Paragraph(f"<b>Stage:</b> {validation['primary_stage']}", styles['Normal']),
+                Paragraph(
+                    f"<b>Sub-stage:</b> {validation['specific_classification'].replace('_', ' ')}",
+                    styles['Normal']
+                ),
+                Paragraph(
+                    f"<b>Recorded:</b> "
+                    f"{recorded.strftime('%Y-%m-%d %H:%M UTC') if recorded else 'Unknown'}",
+                    styles['Normal']
+                ),
+                Spacer(1, 10),
+                Paragraph('Progress', styles['Heading2']),
+                Paragraph(f"<b>Stage completion:</b> {stage_p:.1f}%", styles['Normal']),
+                Paragraph(f"<b>Overall project completion:</b> {overall_p:.1f}%", styles['Normal']),
+                Spacer(1, 10),
+                Paragraph('Model Confidence', styles['Heading2']),
+                Paragraph(f"Sub-stage confidence: {validation['stage_confidence']}%", styles['Normal']),
+                Paragraph(f"Overall stage confidence: {validation['global_confidence']}%", styles['Normal']),
+            ]
+
+            if validation.get('ai_description'):
+                story += [
+                    Spacer(1, 10),
+                    Paragraph('AI Notes', styles['Heading2']),
+                    Paragraph(validation['ai_description'], styles['Normal']),
+                ]
+
+            doc.build(story)
+
+            return send_file(
+                tmp.name,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f'crisp_report_{validation_id}.pdf'
+            )
+
+    except Exception as exc:
+        logger.exception("Error generating report")
+        flash('Could not generate that report.', 'error')
+        return redirect(url_for('dashboard'))
+
+
+# ---------------------------------------------------------------------------
+# Routes: Map
+# ---------------------------------------------------------------------------
+
+
+@app.route('/geo-map')
+@login_required
+def geo_map():
+    user_id = session['user_id']
+    projects = []
+    for project in database.list_projects(user_id):
+        lat, lng = project.get('latitude'), project.get('longitude')
+        if lat is None or lng is None:
+            continue
+        if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+            continue
+        _decorate_progress(project, user_id)
+        projects.append({
+            'id': project['id'],
+            'name': project['name'],
+            'latitude': lat,
+            'longitude': lng,
+            'status': project['status'],
+            'stage': (project['current_stage'] or 'Not started').title(),
+            'progress': project['progress_percentage'],
+        })
+
+    return render_template(
+        'geo_map.html', projects=projects, user_role=session.get('role')
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes: Visual change analyzer (experts only)
+# ---------------------------------------------------------------------------
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
