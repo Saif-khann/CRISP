@@ -1423,6 +1423,72 @@ def geo_map():
 # ---------------------------------------------------------------------------
 
 
+@app.route('/visual_comparison', methods=['GET', 'POST'])
+@role_required('expert')
+def visual_comparison():
+    if request.method == 'GET':
+        return render_template('visual_comparison.html')
+
+    prev_path = curr_path = None
+    try:
+        import base64
+        import vision
+
+        prev_image = request.files.get('prev_image')
+        curr_image = request.files.get('curr_image')
+
+        if not prev_image or not curr_image or not prev_image.filename \
+                or not curr_image.filename:
+            return jsonify({
+                'success': False,
+                'error': 'Please choose both a baseline and a current photo.'
+            }), 400
+
+        if not allowed_file(prev_image.filename) or not allowed_file(curr_image.filename):
+            return jsonify({
+                'success': False,
+                'error': 'Invalid file type. Use PNG, JPG or JPEG.'
+            }), 400
+
+        prev_path = _save_upload(prev_image)
+        curr_path = _save_upload(curr_image)
+
+        result = vision.detect_construction_change(prev_path, curr_path)
+
+        import cv2
+        encoded, buffer = cv2.imencode('.jpg', result['image'],
+                                       [int(cv2.IMWRITE_JPEG_QUALITY), 88])
+        if not encoded:
+            raise RuntimeError("Could not encode the result image")
+
+        return jsonify({
+            'success': True,
+            'result_image': 'data:image/jpeg;base64,'
+                            + base64.b64encode(buffer).decode('utf-8'),
+            'method': result['mask_method'],
+            'aligned': result['aligned'],
+            'change_percent': round(result['change_ratio'] * 100, 1),
+            'has_change': result['has_change'],
+            'note': result['note'],
+        })
+
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception:
+        logger.exception("Error in visual_comparison")
+        return jsonify({'success': False, 'error': 'Could not compare those photos.'}), 500
+    finally:
+        # These are transient analysis inputs, not evidence records.
+        for path in (prev_path, curr_path):
+            if path:
+                _discard_upload(path)
+
+
+# ---------------------------------------------------------------------------
+# Health check & error handlers
+# ---------------------------------------------------------------------------
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
