@@ -1489,6 +1489,18 @@ def visual_comparison():
 # ---------------------------------------------------------------------------
 
 
+@app.route('/healthz')
+def healthz():
+    """Liveness/readiness probe for the deployment platform."""
+    return jsonify({'status': 'ok', 'models_loaded': MODELS_LOADED}), 200
+
+
+@app.context_processor
+def inject_globals():
+    """Template globals: the CSRF token and whether to show demo links."""
+    return {'demo_enabled': ALLOW_DEMO_LOGIN, 'csrf_token': get_csrf_token()}
+
+
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     # PORT is what most container platforms inject; HOST defaults to
