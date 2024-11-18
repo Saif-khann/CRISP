@@ -298,7 +298,6 @@ stages = {
     ],
 }
 
-
 stage_weights = {
     "foundation": 20,
     "superstructure": 30,
@@ -306,7 +305,6 @@ stage_weights = {
     "Interior": 15,
     "finishing works": 15
 }
-
 
 sub_stage_weights = {
     "foundation": {
@@ -338,7 +336,6 @@ sub_stage_weights = {
     }
 }
 
-
 STAGE_ORDER = [
     "foundation", "superstructure", "facade", "Interior", "finishing works"
 ]
@@ -346,7 +343,6 @@ STAGE_ORDER = [
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
-
 
 def get_timezone():
     """Get the configured timezone object."""
@@ -434,7 +430,6 @@ def _discard_upload(path):
 # ML prediction functions
 # ---------------------------------------------------------------------------
 
-
 def ensemble_predict(image):
     """Run ensemble prediction across MobileNet, Inception, and VGG16."""
     import tensorflow as tf
@@ -516,7 +511,6 @@ def _predict_and_classify(image_array, selected_stage):
 # ---------------------------------------------------------------------------
 # AI image description: OpenAI-compatible gateway -> Gemini -> offline fallback
 # ---------------------------------------------------------------------------
-
 
 def _generate_local_description(stage, sub_stage, confidence):
     """
@@ -657,7 +651,6 @@ def describe_image_with_ai(image_path, stage="foundation", sub_stage="Excavation
 # Progress calculation functions
 # ---------------------------------------------------------------------------
 
-
 def calculate_progress(stage, sub_stage):
     """Calculate stage-level and overall project progress."""
     if stage not in stages or sub_stage not in stages[stage]:
@@ -792,7 +785,6 @@ def get_progress_message(prev_stage, prev_sub_stage, curr_stage, curr_sub_stage)
 # ---------------------------------------------------------------------------
 # Routes: Authentication
 # ---------------------------------------------------------------------------
-
 
 @app.route('/demo-login')
 def demo_login():
@@ -936,7 +928,6 @@ def account():
 # Routes: Dashboards
 # ---------------------------------------------------------------------------
 
-
 @app.route('/dashboard')
 @login_required
 def dashboard():
@@ -1003,7 +994,6 @@ def home():
 # ---------------------------------------------------------------------------
 # Routes: Projects
 # ---------------------------------------------------------------------------
-
 
 @app.route('/create_project', methods=['POST'])
 @login_required
@@ -1075,7 +1065,6 @@ def delete_project(project_id):
 # ---------------------------------------------------------------------------
 # Routes: AI validation
 # ---------------------------------------------------------------------------
-
 
 @app.route('/project/<project_id>/validate', methods=['GET'])
 @login_required
@@ -1390,7 +1379,6 @@ def generate_report(validation_id):
 # Routes: Map
 # ---------------------------------------------------------------------------
 
-
 @app.route('/geo-map')
 @login_required
 def geo_map():
@@ -1421,7 +1409,6 @@ def geo_map():
 # ---------------------------------------------------------------------------
 # Routes: Visual change analyzer (experts only)
 # ---------------------------------------------------------------------------
-
 
 @app.route('/visual_comparison', methods=['GET', 'POST'])
 @role_required('expert')
@@ -1488,7 +1475,6 @@ def visual_comparison():
 # Health check & error handlers
 # ---------------------------------------------------------------------------
 
-
 @app.route('/healthz')
 def healthz():
     """Liveness/readiness probe for the deployment platform."""
@@ -1500,6 +1486,33 @@ def inject_globals():
     """Template globals: the CSRF token and whether to show demo links."""
     return {'demo_enabled': ALLOW_DEMO_LOGIN, 'csrf_token': get_csrf_token()}
 
+
+@app.errorhandler(404)
+def handle_404(_error):
+    if request.path.startswith(('/validate_image', '/compare', '/create_project')):
+        return jsonify({'success': False, 'error': 'Not found.'}), 404
+    return render_template('error.html', code=404,
+                           message='That page does not exist.'), 404
+
+
+@app.errorhandler(413)
+def handle_413(_error):
+    return jsonify({
+        'success': False,
+        'error': 'That file is too large. The limit is 10 MB.'
+    }), 413
+
+
+@app.errorhandler(500)
+def handle_500(error):
+    logger.error("Unhandled server error: %s", error)
+    return render_template('error.html', code=500,
+                           message='Something went wrong on our end.'), 500
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
