@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+
+{% block title %}Expert Dashboard - CRISP Intelligence{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Top Action Bar -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <h2 class="fw-bold tracking-tight mb-1">Expert Command Center</h2>
+            <p class="text-muted small mb-0">Multi-project construction lifecycle intelligence and AI verification audit.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createProjectModal">
+                <i class="fas fa-plus me-1"></i> New Project
+            </button>
+            <a href="{{ url_for('geo_map') }}" class="btn btn-outline-primary">
+                <i class="fas fa-map-location-dot me-1"></i> Global Map
+            </a>
+        </div>
+    </div>
+
+    <!-- Stat Metrics Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon primary"><i class="fas fa-folder-open"></i></div>
+                <div>
+                    <div class="stat-label">Active Projects</div>
+                    <div class="stat-value">{{ projects|length }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon success"><i class="fas fa-chart-pie"></i></div>
+                <div>
+                    <div class="stat-label">Average Progress</div>
+                    <div class="stat-value">
+                        {% if projects %}
+                            {% set total_p = namespace(val=0) %}
+                            {% for p in projects %}{% set total_p.val = total_p.val + (p.progress_percentage or 0) %}{% endfor %}
+                            {{ "%.0f"|format(total_p.val / projects|length) }}%
+                        {% else %}
+                            0%
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Projects Table Card -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+            <div class="d-flex align-items-center gap-2">
+                <i class="fas fa-diagram-project text-primary"></i>
+                <span class="fw-bold">Monitored Construction Sites</span>
+            </div>
+            <span class="badge bg-light text-muted border">{{ projects|length }} Sites Registered</span>
+        </div>
+        <div class="card-body p-0">
+            {% if projects %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Project Name & Scope</th>
+                                <th>Location</th>
+                                <th>Current Stage</th>
+                                <th>Lifecycle Progress</th>
+                                <th>Schedule</th>
+                                <th>Status</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for project in projects %}
+                            <tr>
+                                <td>
+                                    <div class="fw-bold text-primary">{{ project.name }}</div>
+                                    <small class="text-muted text-truncate d-block" style="max-width: 220px;">
+                                        {{ project.description or 'Commercial construction site' }}
+                                    </small>
+                                </td>
+                                <td>
+                                    <small class="text-muted"><i class="fas fa-location-dot me-1 text-danger"></i>{{ project.location }}</small>
+                                </td>
+                                <td>
+                                    <span class="badge badge-primary">{{ project.current_stage|title }}</span>
+                                    {% if project.current_sub_stage %}
+                                    <small class="d-block text-muted">{{ project.current_sub_stage.replace('_', ' ') }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2" style="min-width: 140px;">
+                                        <div class="progress flex-grow-1" style="height: 7px;">
+                                            <div class="progress-bar" style="width: {{ project.progress_percentage|default(0) }}%;"></div>
+                                        </div>
+                                        <span class="small fw-bold">{{ "%.0f"|format(project.progress_percentage|default(0)) }}%</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <small class="text-muted d-block">{{ project.start_date }}</small>
+                                    <small class="text-muted">to {{ project.end_date or 'Ongoing' }}</small>
+                                </td>
+                                <td>
+                                    <span class="badge badge-{{ 'success' if project.status == 'active' else 'secondary' }}">
+                                        {{ project.status|title }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group">
+                                        <a href="{{ url_for('home', project_id=project.id) }}" class="btn btn-sm btn-outline-primary py-1 px-3">
+                                            <i class="fas fa-eye me-1"></i> Studio
+                                        </a>
+                                        <a href="{{ url_for('home', project_id=project.id) }}" class="btn btn-sm btn-primary py-1 px-3">
+                                            <i class="fas fa-camera me-1"></i> Validate
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-folder-plus fa-3x text-muted opacity-50 mb-3"></i>
+                    <h6>No Projects Found</h6>
+                    <p class="small text-muted mb-3">Create your first construction project to begin monitoring progress with AI.</p>
+                    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createProjectModal">
+                        Create Project
+                    </button>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Create Project Modal -->
+<div class="modal fade" id="createProjectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fas fa-building-circle-check text-primary"></i>
+                    <h5 class="modal-title mb-0">Register New Project</h5>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="createProjectForm" method="POST" action="{{ url_for('create_project') }}">
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label for="name" class="form-label small fw-bold text-uppercase text-muted">Project Name</label>
+                        <input type="text" class="form-control" id="name" name="name" required placeholder="e.g. Apex Central Commercial Complex">
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label small fw-bold text-uppercase text-muted">Project Scope & Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="2" required placeholder="Overview of floors, structural specs, and objectives..."></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="location" class="form-label small fw-bold text-uppercase text-muted">Site Location</label>
+                        <input type="text" class="form-control" id="location" name="location" required placeholder="e.g. Sector 44, North Corridor">
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label for="start_date" class="form-label small fw-bold text-uppercase text-muted">Start Date</label>
+                            <input type="date" class="form-control" id="start_date" name="start_date" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="end_date" class="form-label small fw-bold text-uppercase text-muted">Target Completion Date</label>
+                            <input type="date" class="form-control" id="end_date" name="end_date" required>
+                        </div>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label for="latitude" class="form-label small fw-bold text-uppercase text-muted">GPS Latitude</label>
+                            <input type="number" step="any" class="form-control" id="latitude" name="latitude" required placeholder="e.g. 28.6139">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="longitude" class="form-label small fw-bold text-uppercase text-muted">GPS Longitude</label>
+                            <input type="number" step="any" class="form-control" id="longitude" name="longitude" required placeholder="e.g. 77.2090">
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold text-uppercase text-muted">Pin Location on Interactive Map</label>
+                        <div id="map" style="height: 250px; border-radius: var(--radius-md); border: 1px solid var(--border-medium);"></div>
+                    </div>
+                    <div class="alert alert-danger mt-3" id="createProjectError" style="display: none;"></div>
+                </div>
+                <div class="modal-footer py-3 bg-light border-top">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="submitCreateProject()">
+                        <i class="fas fa-check me-1"></i> Register Project
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const today = new Date().toISOString().split('T')[0];
+    const sInput = document.getElementById('start_date');
+    if (sInput) sInput.value = today;
+
+    const nextYear = new Date();
+    nextYear.setFullYear(nextYear.getFullYear() + 1);
+    const eInput = document.getElementById('end_date');
+    if (eInput) eInput.value = nextYear.toISOString().split('T')[0];
+});
+
+async function submitCreateProject() {
+    const form = document.getElementById('createProjectForm');
+    const errorDiv = document.getElementById('createProjectError');
+    const formData = new FormData(form);
+
+    try {
+        const response = await fetch(form.action, { method: 'POST', body: formData });
+        const result = await response.json();
+
+        if (result.success) {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('createProjectModal'));
+            if (modal) modal.hide();
+            location.reload();
+        } else {
+            errorDiv.textContent = result.error || 'Failed to create project';
+            errorDiv.style.display = 'block';
+        }
+    } catch (error) {
+        errorDiv.textContent = 'Network error: ' + error.message;
+        errorDiv.style.display = 'block';
+    }
+}
+
+let projectMap, projectMarker;
+
+document.getElementById('createProjectModal')?.addEventListener('shown.bs.modal', function () {
+    if (!projectMap) {
+        projectMap = L.map('map').setView([28.6139, 77.2090], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: 'OpenStreetMap'
+        }).addTo(projectMap);
+
+        projectMap.on('click', function(e) {
+            document.getElementById('latitude').value = e.latlng.lat.toFixed(6);
+            document.getElementById('longitude').value = e.latlng.lng.toFixed(6);
+            
+            if (projectMarker) {
+                projectMarker.setLatLng(e.latlng);
+            } else {
+                projectMarker = L.marker(e.latlng).addTo(projectMap);
+            }
+        });
+    }
+    setTimeout(() => projectMap.invalidateSize(), 200);
+});
+</script>
+{% endblock %}
