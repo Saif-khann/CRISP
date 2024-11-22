@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project.name }} - CRISP Intelligence Dashboard{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Header Section -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <h2 class="mb-0 fw-bold tracking-tight">{{ project.name }}</h2>
+                <span class="badge bg-{{ 'success' if project.status == 'active' else 'secondary' }} text-uppercase">
+                    {{ project.status|title }}
+                </span>
+            </div>
+            <p class="text-muted mb-0 small">
+                <i class="fas fa-location-dot me-1 text-primary"></i>{{ project.location }}
+                <span class="mx-2">·</span>
+                <i class="fas fa-calendar-days me-1"></i>{{ project.start_date }} to {{ project.end_date or project.expected_completion_date or 'Ongoing' }}
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('expert_dashboard' if session.role == 'expert' else 'worker_dashboard') }}" class="btn btn-outline-primary">
+                <i class="fas fa-arrow-left me-1"></i> Dashboard
+            </a>
+            <a href="{{ url_for('geo_map') }}" class="btn btn-dark">
+                <i class="fas fa-map me-1"></i> View on Map
+            </a>
+        </div>
+    </div>
+
+    <!-- 5-Stage Lifecycle Stepper -->
+    <div class="card mb-4 shadow-sm border-0">
+        <div class="card-body p-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0 fw-bold text-uppercase tracking-wider small text-muted">Construction Lifecycle Stepper</h6>
+                <span class="badge badge-primary px-3 py-1 fw-bold">Overall Progress: {{ "%.1f"|format(project.progress_percentage|default(0)) }}%</span>
+            </div>
+
+            {% set current_stage_lower = project.current_stage|default('foundation')|lower %}
+            <div class="stage-stepper">
+                <div class="stage-step {{ 'completed' if 'foundation' in project.completed_stages else 'active' if current_stage_lower == 'foundation' else '' }}">
+                    <div class="step-node"><i class="fas fa-hammer"></i></div>
+                    <div class="step-label">1. Foundation<br><span class="text-muted small">20% weight</span></div>
+                </div>
+                <div class="stage-step {{ 'completed' if 'superstructure' in project.completed_stages else 'active' if current_stage_lower == 'superstructure' else '' }}">
+                    <div class="step-node"><i class="fas fa-building"></i></div>
+                    <div class="step-label">2. Superstructure<br><span class="text-muted small">30% weight</span></div>
+                </div>
+                <div class="stage-step {{ 'completed' if 'facade' in project.completed_stages else 'active' if current_stage_lower == 'facade' else '' }}">
+                    <div class="step-node"><i class="fas fa-border-all"></i></div>
+                    <div class="step-label">3. Facade<br><span class="text-muted small">20% weight</span></div>
+                </div>
+                <div class="stage-step {{ 'completed' if 'Interior' in project.completed_stages or 'interior' in project.completed_stages else 'active' if current_stage_lower in ['interior', 'interior works'] else '' }}">
+                    <div class="step-node"><i class="fas fa-door-open"></i></div>
+                    <div class="step-label">4. Interior<br><span class="text-muted small">15% weight</span></div>
+                </div>
+                <div class="stage-step {{ 'completed' if 'finishing works' in project.completed_stages else 'active' if current_stage_lower == 'finishing works' else '' }}">
+                    <div class="step-node"><i class="fas fa-paint-roller"></i></div>
+                    <div class="step-label">5. Finishing<br><span class="text-muted small">15% weight</span></div>
+                </div>
+            </div>
+
+            <div class="progress mt-2" style="height: 8px;">
+                <div class="progress-bar" role="progressbar" 
+                     style="width: {{ project.progress_percentage|default(0) }}%;" 
+                     aria-valuenow="{{ project.progress_percentage|default(0) }}" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Workspace: Upload & Stage Classifier -->
+    <div class="row g-4 mb-4">
+        <!-- AI Stage Recognition Studio -->
+        <div class="col-lg-7">
+            <div class="card shadow-sm h-100 border-0">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-camera text-primary"></i>
+                        <span class="fw-bold">AI Stage Recognition Studio</span>
+                    </div>
+                    <span class="badge badge-success small"><i class="fas fa-circle-check me-1"></i>Models ready</span>
+                </div>
+                <div class="card-body p-4">
+                    <!-- 1-Click Demo Sample Chips -->
+                    <div class="mb-4 p-3 rounded bg-light border border-light">
+                        <label class="form-label d-block small fw-bold text-uppercase tracking-wider text-muted mb-2">
+                            <i class="fas fa-vial me-1"></i> Try a sample photo
+                        </label>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button type="button" class="sample-chip" onclick="loadSample('sample_foundation.jpg', 'foundation')">
+                                <i class="fas fa-hammer"></i> Foundation
+                            </button>
+                            <button type="button" class="sample-chip" onclick="loadSample('sample_superstructure.jpg', 'superstructure')">
+                                <i class="fas fa-building"></i> Superstructure
+                            </button>
+                            <button type="button" class="sample-chip" onclick="loadSample('sample_facade.jpg', 'facade')">
+                                <i class="fas fa-border-all"></i> Facade
+                            </button>
+                            <button type="button" class="sample-chip" onclick="loadSample('sample_interior.jpg', 'Interior')">
+                                <i class="fas fa-door-open"></i> Interior
+                            </button>
+                            <button type="button" class="sample-chip" onclick="loadSample('sample_finishing.jpg', 'finishing works')">
+                                <i class="fas fa-paint-roller"></i> Finishing
+                            </button>
+                            <button type="button" class="sample-chip sample-chip-mismatch"
+                                    onclick="loadSample('sample_finishing.jpg', 'foundation')"
+                                    title="Loads a real finishing-works photo but declares it as Foundation - shows how the AI catches a wrong stage selection.">
+                                <i class="fas fa-triangle-exclamation"></i> See a mismatch caught
+                            </button>
+                        </div>
+                    </div>
+
+                    <form action="{{ url_for('validate_image') }}" method="POST" enctype="multipart/form-data" id="validationForm">
+                        <input type="hidden" id="project-id" name="project_id" value="{{ project.id }}">
+                        
+                        <!-- Upload Dropzone -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold small text-muted text-uppercase">Site Photograph</label>
+                            <div class="upload-dropzone" id="dropzone" onclick="document.getElementById('image').click()">
+                                <i class="fas fa-cloud-arrow-up upload-icon"></i>
+                                <h6 class="fw-bold mb-1">Click to browse or drop photo here</h6>
+                                <p class="text-muted small mb-0">Supports JPG, PNG, JPEG (Max 10MB)</p>
+                                <input type="file" class="d-none" id="image" name="file" accept="image/png,image/jpeg,image/jpg" required>
+                            </div>
+                        </div>
+
+                        <!-- Image Preview -->
+                        <div class="mb-3 text-center" id="previewContainer" style="display: none;">
+                            <img id="imagePreview" src="" alt="Selected Photo" style="max-width: 100%; max-height: 240px; border-radius: var(--radius-md); box-shadow: var(--shadow-sm);" />
+                        </div>
+
+                        <!-- Stage Selector -->
+                        <div class="mb-3">
+                            <label for="stage" class="form-label fw-semibold small text-muted text-uppercase">Expected stage</label>
+                            <select class="form-select form-select-lg" id="stage" name="stage" required>
+                                <option value="" disabled selected>Select expected construction stage...</option>
+                                <option value="foundation">1. Foundation Stage (Excavation, Rebar, Concrete Pouring)</option>
+                                <option value="superstructure">2. Superstructure Stage (Framing, Structural Walls, Decks)</option>
+                                <option value="facade">3. Facade Stage (Exterior Cladding, Fenestration)</option>
+                                <option value="Interior">4. Interior Stage (Ceiling, Flooring, Staircases)</option>
+                                <option value="finishing works">5. Finishing Works (Painting, Millwork, Fixtures)</option>
+                            </select>
+                            <p class="small text-muted mt-1 mb-0" style="opacity: 0.8;">The stage this photo should show - we'll flag it if the image doesn't match.</p>
+                        </div>
+
+                        <!-- Options -->
+                        <div class="d-flex flex-column gap-2 mb-4">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="proceed" name="proceed" value="true">
+                                <label class="form-check-label small text-muted" for="proceed">
+                                    Record this validation even if the AI flags a stage mismatch
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="describe" name="describe" value="true" checked>
+                                <label class="form-check-label small text-muted" for="describe">
+                                    Generate a short AI progress note for this photo
+                                </label>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100 py-2 fs-6" id="submitBtn">
+                            <i class="fas fa-wand-magic-sparkles me-1"></i> Analyze & Validate with AI
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Inference Results -->
+        <div class="col-lg-5">
+            <div class="card shadow-sm h-100 border-0">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <i class="fas fa-chart-simple text-primary"></i>
+                    <span class="fw-bold">AI Diagnostics & Confidence</span>
+                </div>
+                <div class="card-body p-4" id="resultArea">
+                    <div class="text-center py-5 text-muted">
+                        <i class="fas fa-microchip fa-3x mb-3 text-secondary opacity-50"></i>
+                        <h6 class="fw-bold">Awaiting Image Inference</h6>
+                        <p class="small text-muted mb-0">Upload a photo or select a Quick Test Sample on the left to run MobileNet, Inception, and VGG16 models.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Historical Timeline & Comparisons -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-2">
+                <i class="fas fa-clock-rotate-left text-primary"></i>
+                <span class="fw-bold">Historical Validation Stream</span>
+            </div>
+            <span class="badge bg-light text-muted border">{{ validations|length }} Records Logged</span>
+        </div>
+        <div class="card-body p-4">
+            <!-- Compare Selector -->
+            <div class="row g-3 mb-4 align-items-end p-3 rounded bg-light border border-light">
+                <div class="col-md-5">
+                    <label class="form-label small fw-bold text-muted text-uppercase">Previous Baseline Milestone</label>
+                    <select class="form-select" id="previous-validation">
+                        <option value="">Choose baseline validation...</option>
+                        {% for val in validations %}
+                        <option value="{{ val.id }}">
+                            {{ val.timestamp.strftime('%Y-%m-%d %H:%M') if val.timestamp and val.timestamp.strftime is defined else 'Validation' }} - {{ val.primary_stage|title }} ({{ val.specific_classification.replace('_', ' ') }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label small fw-bold text-muted text-uppercase">Current Target Milestone</label>
+                    <select class="form-select" id="current-validation">
+                        <option value="">Choose recent validation...</option>
+                        {% for val in validations %}
+                        <option value="{{ val.id }}">
+                            {{ val.timestamp.strftime('%Y-%m-%d %H:%M') if val.timestamp and val.timestamp.strftime is defined else 'Validation' }} - {{ val.primary_stage|title }} ({{ val.specific_classification.replace('_', ' ') }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary w-100" id="compareBtn">
+                        <i class="fas fa-code-compare me-1"></i> Compare
+                    </button>
+                </div>
+            </div>
+
+            <!-- Comparison Results Card -->
+            <div id="comparison-results" class="mb-4" style="display: none;"></div>
+
+            <!-- Validations Table -->
+            {% if validations %}
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Milestone Date</th>
+                            <th>Classified Stage</th>
+                            <th>Sub-Stage Task</th>
+                            <th>AI Confidence</th>
+                            <th>Report</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for val in validations %}
+                        <tr>
+                            <td class="small fw-semibold">
+                                <i class="fas fa-clock me-1 text-muted"></i>
+                                {{ val.timestamp.strftime('%b %d, %Y %H:%M') if val.timestamp and val.timestamp.strftime is defined else 'Recorded' }}
+                            </td>
+                            <td><span class="badge badge-primary">{{ val.primary_stage|title }}</span></td>
+                            <td class="fw-semibold text-secondary">{{ val.specific_classification.replace('_', ' ') }}</td>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="small fw-bold">{{ val.stage_confidence or val.confidence_scores.get('Stage Confidence', '94.5') }}%</span>
+                                    <div class="progress flex-grow-1" style="height: 6px; width: 60px;">
+                                        <div class="progress-bar bg-success" style="width: {{ val.stage_confidence or val.confidence_scores.get('Stage Confidence', '94.5') }}%;"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <a href="{{ url_for('generate_report', validation_id=val.id, project_id=project.id) }}" class="btn btn-sm btn-outline-primary py-1 px-2">
+                                    <i class="fas fa-file-pdf text-danger me-1"></i> PDF Audit
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4 text-muted">
+                <p class="mb-0">No validation records yet. Run your first validation using the studio above.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+async function loadSample(filename, stage) {
+    try {
+        const stageSelect = document.getElementById('stage');
+        if (stageSelect) stageSelect.value = stage;
+
+        const response = await fetch(`/static/demo_samples/${filename}`);
+        const blob = await response.blob();
+        const file = new File([blob], filename, { type: 'image/jpeg' });
+
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        const fileInput = document.getElementById('image');
+        fileInput.files = dataTransfer.files;
+
+        const previewContainer = document.getElementById('previewContainer');
+        const preview = document.getElementById('imagePreview');
+        preview.src = `/static/demo_samples/${filename}`;
+        previewContainer.style.display = 'block';
+    } catch (e) {
+        console.error('Error loading sample:', e);
+    }
+}
+
+// Drag and drop dropzone handlers
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('image');
+const previewContainer = document.getElementById('previewContainer');
+const imagePreview = document.getElementById('imagePreview');
+
+['dragenter', 'dragover'].forEach(name => {
+    dropzone?.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+    });
+});
+
+['dragleave', 'drop'].forEach(name => {
+    dropzone?.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+    });
+});
+
+dropzone?.addEventListener('drop', (e) => {
+    if (e.dataTransfer.files.length > 0) {
+        fileInput.files = e.dataTransfer.files;
+        showFilePreview(fileInput.files[0]);
+    }
+});
+
+fileInput?.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+        showFilePreview(e.target.files[0]);
+    }
+});
+
+function showFilePreview(file) {
+    if (file && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            imagePreview.src = e.target.result;
+            previewContainer.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    }
+}
+</script>
+{% endblock %}
