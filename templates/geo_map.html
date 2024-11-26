@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}Site Map & GIS Tracker - CRISP Intelligence{% endblock %}
+
+{% block head %}
+{{ super() }}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+    .map-wrapper {
+        height: calc(100vh - 120px);
+        min-height: 550px;
+        position: relative;
+    }
+    #map {
+        width: 100%;
+        height: 100%;
+        border-radius: var(--radius-lg);
+        z-index: 1;
+        box-shadow: var(--shadow-md);
+    }
+    .map-sidebar {
+        position: absolute;
+        top: 16px;
+        left: 16px;
+        width: 340px;
+        max-height: calc(100% - 32px);
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-lg);
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .map-sidebar-header {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border-light);
+        background: var(--bg-surface);
+    }
+    .map-project-list {
+        overflow-y: auto;
+        padding: 10px;
+    }
+    .map-project-card {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-light);
+        border-radius: var(--radius-sm);
+        padding: 12px;
+        margin-bottom: 8px;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+    .map-project-card:hover, .map-project-card.active {
+        border-color: var(--primary);
+        background: var(--primary-subtle);
+        transform: translateY(-1px);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-lg-4 py-3">
+    <div class="map-wrapper">
+        <!-- Floating Glass Sidebar -->
+        <div class="map-sidebar">
+            <div class="map-sidebar-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="mb-0 fw-bold"><i class="fas fa-map-location-dot text-primary me-2"></i>Monitored Sites</h6>
+                    <small class="text-muted">{{ projects|length }} GPS Locations Active</small>
+                </div>
+            </div>
+            <div class="map-project-list">
+                {% if projects %}
+                    {% for p in projects %}
+                    <div class="map-project-card" data-id="{{ p.id }}" data-lat="{{ p.latitude }}" data-lng="{{ p.longitude }}">
+                        <div class="d-flex justify-content-between align-items-start mb-1">
+                            <h6 class="mb-0 fw-bold text-primary small">{{ p.name }}</h6>
+                            <span class="badge badge-primary" style="font-size: 0.65rem;">{{ p.stage }}</span>
+                        </div>
+                        <div class="progress my-2" style="height: 5px;">
+                            <div class="progress-bar" style="width: {{ p.progress }}%;"></div>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center small text-muted">
+                            <span>{{ "%.0f"|format(p.progress) }}% complete</span>
+                            <span class="text-secondary"><i class="fas fa-location-dot me-1"></i>{{ "%.4f"|format(p.latitude) }}, {{ "%.4f"|format(p.longitude) }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-4 text-muted small">No GPS tagged sites found.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Full Map Canvas -->
+        <div id="map"></div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const map = L.map('map').setView([20.5937, 78.9629], 5);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+    }).addTo(map);
+
+    const markers = {};
+    const bounds = L.latLngBounds();
+
+    {% for p in projects %}
+    if ({{ p.latitude|tojson }} && {{ p.longitude|tojson }}) {
+        const lat = {{ p.latitude|tojson }};
+        const lng = {{ p.longitude|tojson }};
+        const marker = L.marker([lat, lng]).bindPopup(`
+            <div style="min-width: 180px; font-family: 'Plus Jakarta Sans', sans-serif;">
+                <h6 style="margin: 0 0 6px 0; font-weight: 700; color: #2563eb;">{{ p.name }}</h6>
+                <div style="font-size: 0.8rem; color: #475569; margin-bottom: 8px;">
+                    <div><strong>Stage:</strong> {{ p.stage }}</div>
+                    <div><strong>Progress:</strong> {{ p.progress }}%</div>
+                    <div><strong>Status:</strong> {{ p.status|title }}</div>
+                </div>
+                <a href="/home?project_id={{ p.id }}" class="btn btn-sm btn-primary w-100 py-1" style="font-size: 0.75rem; text-decoration: none; color: white;">
+                    Open Intelligence Studio
+                </a>
+            </div>
+        `);
+        markers['{{ p.id }}'] = marker;
+        marker.addTo(map);
+        bounds.extend([lat, lng]);
+    }
+    {% endfor %}
+
+    if (Object.keys(markers).length > 0) {
+        map.fitBounds(bounds, { padding: [80, 80] });
+    }
+
+    document.querySelectorAll('.map-project-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const lat = parseFloat(card.dataset.lat);
+            const lng = parseFloat(card.dataset.lng);
+            const id = card.dataset.id;
+
+            if (lat && lng) {
+                map.flyTo([lat, lng], 14, { duration: 1.2 });
+                if (markers[id]) markers[id].openPopup();
+
+                document.querySelectorAll('.map-project-card').forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
