@@ -121,3 +121,67 @@ def _segformer_structure_mask(bgr_image):
 # ---------------------------------------------------------------------------
 # Heuristic region masks
 # ---------------------------------------------------------------------------
+
+
+def _sky_mask(bgr_image, structure_density=None):
+    """Sky = bright/blue AND featureless AND anchored to the top of frame.
+
+    Colour alone is not enough. Pale concrete and white cladding are also
+    bright and desaturated, so a brightness-only rule swallows the very
+    buildings we care about - and a morphological close can bridge a pale
+    facade up to the sky, dragging the whole structure into the mask.
+
+    Sky is separated here by being *textureless*: buildings carry edges,
+    openings and panel lines even when flat-toned, while sky does not. A
+    vertical prior and a top-anchoring requirement complete the split.
+    """
+    img_h, img_w = bgr_image.shape[:2]
+    hsv = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2HSV)
+    h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+
+    overcast = (v > 150) & (s < 45)                       # white/grey sky
+    blue = (h >= 95) & (h <= 135) & (s > 35) & (v > 110)  # clear blue sky
+
+    if structure_density is None:
+        structure_density = _structure_density(bgr_image)
+    featureless = structure_density < 0.06
+
+    candidate = ((overcast | blue) & featureless)
+
+    # Sky does not occupy the bottom of an aerial construction shot.
+    vertical_cutoff = int(img_h * 0.65)
+    candidate[vertical_cutoff:, :] = False
+    candidate = candidate.astype(np.uint8) * 255
+
+    # Gentle cleanup only - a large kernel here is what bridges facades
+    # into the sky region.
+    candidate = cv2.morphologyEx(candidate, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+
+    num, labels, stats, centroids = cv2.connectedComponentsWithStats(candidate)
+    if num <= 1:
+        return np.zeros((img_h, img_w), dtype=np.uint8)
+
+    band = max(1, img_h // 25)
+    touching_top = set(np.unique(labels[0:band, :]))
+    touching_top.discard(0)
+
+    keep = [
+        label for label in touching_top
+        # Centroid must sit in the upper third: a component that merely
+        # grazes the top edge but extends far down is a building, not sky.
+        if centroids[label][1] < img_h * 0.33
+        and stats[label, cv2.CC_STAT_AREA] > (img_h * img_w) * 0.002
+    ]
+    if not keep:
+        return np.zeros((img_h, img_w), dtype=np.uint8)
+
+    mask = (np.isin(labels, keep).astype(np.uint8)) * 255
+    return cv2.dilate(mask, np.ones((5, 5), np.uint8), iterations=1)
+
+
+def _vegetation_mask(bgr_image):
+    """Green vegetation - trees, grass verges, landscaping."""
+    hsv = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2HSV)
+    h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    veg = ((h >= 32) & (h <= 92) & (s > 45) & (v > 25)).astype(np.uint8) * 255
+    return cv2.morphologyEx(veg, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
