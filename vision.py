@@ -185,3 +185,35 @@ def _vegetation_mask(bgr_image):
     h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
     veg = ((h >= 32) & (h <= 92) & (s > 45) & (v > 25)).astype(np.uint8) * 255
     return cv2.morphologyEx(veg, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+
+
+def _fill_holes(mask):
+    """Fill regions fully enclosed by the mask.
+
+    A large flat wall or slab only produces edges at its boundary, so an
+    edge-density mask outlines it but leaves the middle empty. Filling
+    enclosed holes recovers the whole structure instead of a ring around
+    it - without this, change inside a big new facade goes unreported.
+    """
+    padded = cv2.copyMakeBorder(mask, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
+    flood = padded.copy()
+    cv2.floodFill(flood, np.zeros((padded.shape[0] + 2, padded.shape[1] + 2), np.uint8),
+                  (0, 0), 255)
+    holes = cv2.bitwise_not(flood)[1:-1, 1:-1]
+    return cv2.bitwise_or(mask, holes)
+
+
+def _structure_density(bgr_image):
+    """Local edge density - high on framing, scaffolding, formwork and
+    facades; low on road surface, water and open ground."""
+    gray = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    edges = cv2.Canny(gray, 50, 150)
+    edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
+    density = cv2.boxFilter(
+        edges.astype(np.float32), -1, (51, 51), normalize=True
+    )
+    peak = float(density.max())
+    if peak <= 0:
+        return np.zeros_like(density)
+    return density / peak
