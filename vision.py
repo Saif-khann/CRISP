@@ -217,3 +217,91 @@ def _structure_density(bgr_image):
     if peak <= 0:
         return np.zeros_like(density)
     return density / peak
+
+
+def _construction_mask(img_a, img_b):
+    """Where change is allowed to count: not sky, not vegetation, and
+    carrying built structure in at least one of the two photos."""
+    seg_a = _segformer_structure_mask(img_a)
+    seg_b = _segformer_structure_mask(img_b)
+
+    if seg_a is not None and seg_b is not None:
+        combined = cv2.bitwise_or(seg_a, seg_b)
+        combined = cv2.morphologyEx(
+            combined, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8)
+        )
+        combined = cv2.dilate(combined, np.ones((9, 9), np.uint8), iterations=1)
+        return combined, 'segformer'
+
+    density_a = _structure_density(img_a)
+    density_b = _structure_density(img_b)
+
+    sky = cv2.bitwise_or(_sky_mask(img_a, density_a), _sky_mask(img_b, density_b))
+    veg = cv2.bitwise_or(_vegetation_mask(img_a), _vegetation_mask(img_b))
+
+    density = np.maximum(density_a, density_b)
+    structural = (density > 0.14).astype(np.uint8) * 255
+
+    # Consolidate, then fill enclosed interiors so solid walls and slabs
+    # count as construction and not just their outlines.
+    structural = cv2.morphologyEx(structural, cv2.MORPH_CLOSE, np.ones((25, 25), np.uint8))
+    structural = _fill_holes(structural)
+
+    mask = cv2.bitwise_and(structural, cv2.bitwise_not(sky))
+    mask = cv2.bitwise_and(mask, cv2.bitwise_not(veg))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
+    return mask, 'heuristic'
+
+
+# ---------------------------------------------------------------------------
+# Alignment, exposure normalisation, structural comparison
+# ---------------------------------------------------------------------------
+
+
+def _align(src, dst):
+    """Warp `src` onto `dst` using ORB features + RANSAC homography.
+
+    Returns (warped_src, validity_mask). Falls back to a plain resize when
+    there aren't enough reliable matches - better a slightly misaligned
+    comparison than a wildly warped one.
+    """
+    h, w = dst.shape[:2]
+    fallback = (cv2.resize(src, (w, h)), np.full((h, w), 255, dtype=np.uint8))
+
+    try:
+        gray_src = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
+        gray_dst = cv2.cvtColor(dst, cv2.COLOR_BGR2GRAY)
+
+        orb = cv2.ORB_create(4000)
+        kp1, des1 = orb.detectAndCompute(gray_src, None)
+        kp2, des2 = orb.detectAndCompute(gray_dst, None)
+        if des1 is None or des2 is None or len(kp1) < 12 or len(kp2) < 12:
+            return fallback
+
+        matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
+        raw = matcher.knnMatch(des1, des2, k=2)
+        good = [m for pair in raw if len(pair) == 2
+                for m, n in [pair] if m.distance < 0.75 * n.distance]
+        if len(good) < 15:
+            return fallback
+
+        src_pts = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
+        dst_pts = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+        H, inliers = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+        if H is None or inliers is None or int(inliers.sum()) < 12:
+            return fallback
+
+        # Reject degenerate/extreme warps (mirror flips, huge scale jumps).
+        det = float(np.linalg.det(H[:2, :2]))
+        if not np.isfinite(det) or det < 0.2 or det > 5.0:
+            return fallback
+
+        warped = cv2.warpPerspective(src, H, (w, h))
+        valid = cv2.warpPerspective(
+            np.full(src.shape[:2], 255, dtype=np.uint8), H, (w, h)
+        )
+        valid = cv2.erode(valid, np.ones((9, 9), np.uint8), iterations=1)
+        return warped, valid
+    except cv2.error as exc:
+        logger.warning("Alignment failed, comparing unaligned: %s", exc)
+        return fallback
