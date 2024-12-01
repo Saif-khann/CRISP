@@ -305,3 +305,51 @@ def _align(src, dst):
     except cv2.error as exc:
         logger.warning("Alignment failed, comparing unaligned: %s", exc)
         return fallback
+
+
+def _normalise_exposure(gray_src, gray_ref, valid_mask):
+    """Linearly match src's mean/std to ref within the valid region, then
+    equalise local contrast. Removes the sunny-vs-overcast offset that
+    would otherwise dominate the difference."""
+    m = valid_mask > 0
+    if m.sum() > 100:
+        src_vals, ref_vals = gray_src[m], gray_ref[m]
+        src_std = float(src_vals.std())
+        if src_std > 1e-3:
+            gain = float(ref_vals.std()) / src_std
+            gain = float(np.clip(gain, 0.4, 2.5))
+            offset = float(ref_vals.mean()) - gain * float(src_vals.mean())
+            gray_src = np.clip(
+                gray_src.astype(np.float32) * gain + offset, 0, 255
+            ).astype(np.uint8)
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    return clahe.apply(gray_src), clahe.apply(gray_ref)
+
+
+def _ssim_dissimilarity(gray_a, gray_b):
+    """Per-pixel structural dissimilarity in [0,1] (1 - SSIM)/2.
+
+    Structural rather than absolute: a wall that merely got brighter
+    scores near zero, a wall that appeared scores high.
+    """
+    a = gray_a.astype(np.float32)
+    b = gray_b.astype(np.float32)
+    C1, C2 = (0.01 * 255) ** 2, (0.03 * 255) ** 2
+
+    mu_a = cv2.GaussianBlur(a, (11, 11), 1.5)
+    mu_b = cv2.GaussianBlur(b, (11, 11), 1.5)
+    mu_a_sq, mu_b_sq, mu_ab = mu_a * mu_a, mu_b * mu_b, mu_a * mu_b
+
+    sigma_a = cv2.GaussianBlur(a * a, (11, 11), 1.5) - mu_a_sq
+    sigma_b = cv2.GaussianBlur(b * b, (11, 11), 1.5) - mu_b_sq
+    sigma_ab = cv2.GaussianBlur(a * b, (11, 11), 1.5) - mu_ab
+
+    ssim = (((2 * mu_ab + C1) * (2 * sigma_ab + C2)) /
+            ((mu_a_sq + mu_b_sq + C1) * (sigma_a + sigma_b + C2)))
+    return np.clip((1.0 - ssim) / 2.0, 0.0, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
