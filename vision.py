@@ -60,7 +60,6 @@ _onnx_checked = False
 # Optional ONNX SegFormer building segmentation (torch-free)
 # ---------------------------------------------------------------------------
 
-
 def _get_onnx_session():
     """Load models/segformer.onnx once, if it exists. Returns None when
     unavailable - callers fall back to the heuristic structure mask."""
@@ -121,7 +120,6 @@ def _segformer_structure_mask(bgr_image):
 # ---------------------------------------------------------------------------
 # Heuristic region masks
 # ---------------------------------------------------------------------------
-
 
 def _sky_mask(bgr_image, structure_density=None):
     """Sky = bright/blue AND featureless AND anchored to the top of frame.
@@ -257,7 +255,6 @@ def _construction_mask(img_a, img_b):
 # Alignment, exposure normalisation, structural comparison
 # ---------------------------------------------------------------------------
 
-
 def _align(src, dst):
     """Warp `src` onto `dst` using ORB features + RANSAC homography.
 
@@ -353,3 +350,92 @@ def _ssim_dissimilarity(gray_a, gray_b):
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
+
+def detect_construction_change(before_path, after_path):
+    """Compare two site photos and highlight construction changes.
+
+    Returns a dict with the annotated BGR image plus metrics describing
+    what was found and how it was computed.
+    """
+    before = cv2.imread(before_path)
+    after = cv2.imread(after_path)
+    if before is None or after is None:
+        raise ValueError("One or both images could not be read.")
+
+    # Work at a bounded resolution so runtime stays predictable.
+    h, w = after.shape[:2]
+    if w > MAX_WORK_WIDTH:
+        scale = MAX_WORK_WIDTH / float(w)
+        after = cv2.resize(after, (MAX_WORK_WIDTH, int(round(h * scale))))
+    h, w = after.shape[:2]
+
+    aligned_before, valid = _align(before, after)
+
+    gray_before = cv2.cvtColor(aligned_before, cv2.COLOR_BGR2GRAY)
+    gray_after = cv2.cvtColor(after, cv2.COLOR_BGR2GRAY)
+    gray_before, gray_after = _normalise_exposure(gray_before, gray_after, valid)
+
+    dissim = _ssim_dissimilarity(gray_before, gray_after)
+    dissim_u8 = np.clip(dissim * 255.0, 0, 255).astype(np.uint8)
+    dissim_u8 = cv2.medianBlur(dissim_u8, 5)
+
+    region, mask_method = _construction_mask(aligned_before, after)
+    region = cv2.bitwise_and(region, valid)
+
+    region_pixels = dissim_u8[region > 0]
+    if region_pixels.size < 500:
+        # Nothing recognisable as construction in frame - report honestly
+        # rather than highlighting arbitrary pixels.
+        return {
+            'image': after,
+            'change_ratio': 0.0,
+            'mask_method': mask_method,
+            'aligned': bool(valid.mean() < 254),
+            'has_change': False,
+            'note': 'No construction structure was detected in these photos.'
+        }
+
+    # Adaptive threshold within the construction region, with a floor so a
+    # genuinely unchanged site doesn't get noise promoted into "change".
+    otsu_t, _ = cv2.threshold(region_pixels, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    threshold = max(float(otsu_t), 46.0)
+
+    change = ((dissim_u8 >= threshold) & (region > 0)).astype(np.uint8) * 255
+    change = cv2.morphologyEx(change, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    change = cv2.morphologyEx(change, cv2.MORPH_CLOSE, np.ones((21, 21), np.uint8))
+    # A newly-built wall changes strongly at its edges and openings but can
+    # be near-uniform inside; fill so the structure reads as one region.
+    change = cv2.bitwise_and(_fill_holes(change), region)
+
+    # Drop small speckle so only substantial, contiguous change survives.
+    min_area = max(80.0, MIN_COMPONENT_AREA_RATIO * h * w)
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(change, connectivity=8)
+    cleaned = np.zeros_like(change)
+    for i in range(1, num):
+        if stats[i, cv2.CC_STAT_AREA] >= min_area:
+            cleaned[labels == i] = 255
+    change = cleaned
+
+    region_area = int((region > 0).sum())
+    change_area = int((change > 0).sum())
+    change_ratio = (change_area / region_area) if region_area else 0.0
+
+    # Annotate: tinted fill inside changed areas, crisp outline around them.
+    annotated = after.copy()
+    if change_area:
+        overlay = annotated.copy()
+        overlay[change > 0] = (0, 200, 0)
+        annotated = cv2.addWeighted(overlay, 0.42, annotated, 0.58, 0)
+        contours, _ = cv2.findContours(
+            change, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        cv2.drawContours(annotated, contours, -1, (0, 255, 0), 2)
+
+    return {
+        'image': annotated,
+        'change_ratio': change_ratio,
+        'mask_method': mask_method,
+        'aligned': bool(valid.mean() < 254),
+        'has_change': change_area > 0,
+        'note': None,
+    }
