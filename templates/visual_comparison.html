@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block title %}Visual Analyzer - CRISP AI Change Detection{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Header -->
+    <div class="mb-4">
+        <h2 class="fw-bold tracking-tight mb-1">Visual Change & Structural Progress Analyzer</h2>
+        <p class="text-muted small mb-0">Upload two progress photos of the same site to compute structural differencing and segment new construction advancements using AI.</p>
+        <p class="small text-muted mt-1 mb-0" style="opacity: 0.8;">Works best with two photos taken from roughly the same spot and angle - comparing unrelated shots of different areas will mostly highlight noise, not real progress.</p>
+    </div>
+
+    <!-- Dropzones Row -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100 border-0">
+                <div class="card-header bg-white d-flex align-items-center gap-2">
+                    <i class="fas fa-history text-primary"></i>
+                    <span class="fw-bold">1. Baseline Progress Photo</span>
+                </div>
+                <div class="card-body p-4">
+                    <div class="upload-dropzone mb-3" id="prevDropzone" onclick="document.getElementById('prevImage').click()">
+                        <i class="fas fa-image upload-icon"></i>
+                        <h6 class="fw-bold mb-1">Select Previous Milestone Photo</h6>
+                        <p class="small text-muted mb-0">Click to upload baseline photo</p>
+                        <input type="file" class="d-none" id="prevImage" accept="image/png,image/jpeg,image/jpg">
+                    </div>
+                    <div id="prevPreview" class="text-center" style="display: none;">
+                        <img src="" alt="Previous Preview" style="max-width: 100%; max-height: 220px; border-radius: var(--radius-md); box-shadow: var(--shadow-sm);">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100 border-0">
+                <div class="card-header bg-white d-flex align-items-center gap-2">
+                    <i class="fas fa-camera text-success"></i>
+                    <span class="fw-bold">2. Recent / Current Site Photo</span>
+                </div>
+                <div class="card-body p-4">
+                    <div class="upload-dropzone mb-3" id="currDropzone" onclick="document.getElementById('currImage').click()">
+                        <i class="fas fa-image upload-icon text-success"></i>
+                        <h6 class="fw-bold mb-1">Select Current Milestone Photo</h6>
+                        <p class="small text-muted mb-0">Click to upload recent photo</p>
+                        <input type="file" class="d-none" id="currImage" accept="image/png,image/jpeg,image/jpg">
+                    </div>
+                    <div id="currPreview" class="text-center" style="display: none;">
+                        <img src="" alt="Current Preview" style="max-width: 100%; max-height: 220px; border-radius: var(--radius-md); box-shadow: var(--shadow-sm);">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Bar -->
+    <div class="text-center mb-4">
+        <button class="btn btn-primary px-5 py-2 fs-6" id="compareBtn" disabled>
+            <span class="spinner-border spinner-border-sm d-none me-2" role="status"></span>
+            <span class="button-text"><i class="fas fa-wand-magic-sparkles me-1"></i> Compute AI Change Detection</span>
+        </button>
+    </div>
+
+    <!-- Output Visualization Card -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-2">
+                <i class="fas fa-layer-group text-primary"></i>
+                <span class="fw-bold">AI Change Detection Heatmap</span>
+            </div>
+            <span class="badge bg-light text-muted border" id="methodBadge">Method: pending</span>
+        </div>
+        <div class="card-body p-4 text-center">
+            <div id="resultPlaceholder" class="py-5 text-muted">
+                <i class="fas fa-sliders fa-3x mb-3 text-secondary opacity-50"></i>
+                <h6 class="fw-bold">Awaiting Input Photographs</h6>
+                <p class="small text-muted mb-0">Select both baseline and current site photos above to detect structural modifications highlighted in green.</p>
+            </div>
+            <div id="resultContainer" style="display: none;">
+                <img id="resultImg" src="" alt="Change detection result" style="max-width: 100%; max-height: 520px; border-radius: var(--radius-md); box-shadow: var(--shadow-md);" />
+                <div class="mt-3 p-3 bg-light rounded text-start mx-auto" style="max-width: 640px;">
+                    <div class="d-flex align-items-center gap-2 fw-bold small mb-2" id="resultHeadline">
+                        <i class="fas fa-circle-check"></i> <span></span>
+                    </div>
+                    <p class="small text-muted mb-2" id="resultDescription"></p>
+                    <div class="d-flex flex-wrap gap-3 small text-muted" id="resultMeta"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const pInput = document.getElementById('prevImage');
+    const cInput = document.getElementById('currImage');
+    const pPrev = document.getElementById('prevPreview');
+    const cPrev = document.getElementById('currPreview');
+    const pImg = pPrev.querySelector('img');
+    const cImg = cPrev.querySelector('img');
+    const btn = document.getElementById('compareBtn');
+    const spinner = btn.querySelector('.spinner-border');
+    const btnText = btn.querySelector('.button-text');
+    const resultPlaceholder = document.getElementById('resultPlaceholder');
+    const resultContainer = document.getElementById('resultContainer');
+    const resultImg = document.getElementById('resultImg');
+    const methodBadge = document.getElementById('methodBadge');
+    const resultDescription = document.getElementById('resultDescription');
+    const resultHeadline = document.getElementById('resultHeadline');
+    const resultMeta = document.getElementById('resultMeta');
+
+    const METHOD_LABELS = {
+        segformer: {
+            badge: 'SegFormer building mask',
+            description: 'Changes are restricted to regions the segmentation model identifies as built structure, so surrounding sky, roads and vegetation are excluded.'
+        },
+        heuristic: {
+            badge: 'Structural analysis',
+            description: 'Changes are restricted to construction regions - sky, vegetation and smooth ground are excluded, and the area must carry built structure in at least one photo.'
+        }
+    };
+
+    function checkReady() {
+        btn.disabled = !(pInput.files.length > 0 && cInput.files.length > 0);
+    }
+
+    pInput.addEventListener('change', function() {
+        if (pInput.files.length > 0) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                pImg.src = e.target.result;
+                pPrev.style.display = 'block';
+            };
+            reader.readAsDataURL(pInput.files[0]);
+        }
+        checkReady();
+    });
+
+    cInput.addEventListener('change', function() {
+        if (cInput.files.length > 0) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                cImg.src = e.target.result;
+                cPrev.style.display = 'block';
+            };
+            reader.readAsDataURL(cInput.files[0]);
+        }
+        checkReady();
+    });
+
+    btn.addEventListener('click', async function() {
+        const formData = new FormData();
+        formData.append('prev_image', pInput.files[0]);
+        formData.append('curr_image', cInput.files[0]);
+
+        btn.disabled = true;
+        spinner.classList.remove('d-none');
+        btnText.textContent = 'Analyzing...';
+        resultPlaceholder.innerHTML = '<div class="spinner-grow text-primary mb-3"></div><p class="small text-muted">Comparing the two photos for structural changes...</p>';
+        resultPlaceholder.style.display = 'block';
+        resultContainer.style.display = 'none';
+
+        try {
+            const resp = await fetch('/visual_comparison', { method: 'POST', body: formData });
+            const data = await resp.json();
+
+            if (data.success) {
+                const labels = METHOD_LABELS[data.method] || METHOD_LABELS.heuristic;
+                resultImg.src = data.result_image;
+                methodBadge.textContent = labels.badge;
+
+                const icon = resultHeadline.querySelector('i');
+                const headlineText = resultHeadline.querySelector('span');
+
+                if (data.has_change) {
+                    resultHeadline.classList.remove('text-muted');
+                    resultHeadline.classList.add('text-success');
+                    icon.className = 'fas fa-circle-check';
+                    headlineText.textContent =
+                        `Construction change detected across ${data.change_percent}% of the built area`;
+                    resultDescription.textContent = labels.description;
+                } else {
+                    resultHeadline.classList.remove('text-success');
+                    resultHeadline.classList.add('text-muted');
+                    icon.className = 'fas fa-circle-minus';
+                    headlineText.textContent = 'No significant construction change detected';
+                    resultDescription.textContent = data.note ||
+                        'The two photos show the same structural state. Exposure and viewpoint differences alone are not reported as progress.';
+                }
+
+                resultMeta.innerHTML = [
+                    `<span><i class="fas fa-crop-simple me-1"></i>${data.aligned ? 'Photos aligned automatically' : 'Compared without alignment'}</span>`,
+                    `<span><i class="fas fa-layer-group me-1"></i>${labels.badge}</span>`
+                ].join('');
+
+                resultPlaceholder.style.display = 'none';
+                resultContainer.style.display = 'block';
+            } else {
+                resultPlaceholder.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-circle me-1"></i> ${data.error}</span>`;
+            }
+        } catch (e) {
+            resultPlaceholder.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-circle me-1"></i> Error: ${e.message}</span>`;
+        } finally {
+            btn.disabled = false;
+            spinner.classList.add('d-none');
+            btnText.innerHTML = '<i class="fas fa-wand-magic-sparkles me-1"></i> Compute AI Change Detection';
+        }
+    });
+});
+</script>
+{% endblock %}
