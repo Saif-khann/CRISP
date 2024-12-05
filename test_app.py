@@ -102,3 +102,70 @@ def test_dashboard_requires_login(client):
     rv = client.get('/dashboard', follow_redirects=False)
     assert rv.status_code == 302
     assert '/login' in rv.headers['Location']
+
+
+def test_geo_map_requires_login(client):
+    rv = client.get('/geo-map', follow_redirects=False)
+    assert rv.status_code == 302
+    assert '/login' in rv.headers['Location']
+
+
+def test_visual_comparison_requires_login(client):
+    rv = client.get('/visual_comparison', follow_redirects=False)
+    assert rv.status_code == 302
+    assert '/login' in rv.headers['Location']
+
+
+# ---------------------------------------------------------------------------
+# Authentication - regression guards
+#
+# The login form previously accepted ANY email/password whenever Firebase
+# was unconfigured, and inferred the role from whether "expert" appeared
+# in the email string. These tests exist so that cannot come back.
+# ---------------------------------------------------------------------------
+
+
+def test_arbitrary_credentials_are_rejected(client):
+    """An unregistered email must never be granted a session."""
+    rv = _post(client, '/login',
+               {'email': 'expert@anything.com', 'password': 'whatever'})
+    assert rv.status_code == 401
+    with client.session_transaction() as sess:
+        assert 'user_id' not in sess
+
+
+def test_wrong_password_is_rejected(client, account):
+    acct = account('worker')
+    rv = _post(client, '/login',
+               {'email': acct['email'], 'password': 'not-the-password'})
+    assert rv.status_code == 401
+    with client.session_transaction() as sess:
+        assert 'user_id' not in sess
+
+
+def test_correct_password_is_accepted(client, account):
+    acct = account('expert')
+    rv = _login(client, acct)
+    assert rv.status_code == 302
+    assert 'expert_dashboard' in rv.headers['Location']
+
+
+def test_role_comes_from_the_account_not_the_email(client):
+    """Role must be read from the stored account, never inferred from the
+    email address."""
+    email = f'expert-{uuid.uuid4().hex[:8]}@test.local'
+    database.create_user(email, 'test-password-123', 'worker')
+    rv = _post(client, '/login', {'email': email, 'password': 'test-password-123'})
+    assert rv.status_code == 302
+    # Despite "expert" appearing in the address, this account is a worker.
+    assert 'worker_dashboard' in rv.headers['Location']
+
+
+def test_passwords_are_not_stored_in_plaintext(account):
+    acct = account('worker')
+    with database.get_connection() as conn:
+        row = conn.execute(
+            'SELECT password_hash FROM users WHERE id = ?', (acct['id'],)
+        ).fetchone()
+    assert acct['password'] not in row['password_hash']
+    assert len(row['password_hash']) > 40
