@@ -169,3 +169,40 @@ def test_passwords_are_not_stored_in_plaintext(account):
         ).fetchone()
     assert acct['password'] not in row['password_hash']
     assert len(row['password_hash']) > 40
+
+
+def test_short_passwords_are_refused():
+    with pytest.raises(ValueError):
+        database.create_user(f'{uuid.uuid4().hex}@test.local', 'short', 'worker')
+
+
+def test_duplicate_email_is_refused(account):
+    acct = account('worker')
+    with pytest.raises(ValueError):
+        database.create_user(acct['email'], 'another-password-1', 'expert')
+
+
+def test_invalid_role_is_refused():
+    with pytest.raises(ValueError):
+        database.create_user(
+            f'{uuid.uuid4().hex}@test.local', 'test-password-123', 'admin'
+        )
+
+
+# ---------------------------------------------------------------------------
+# Role gating
+# ---------------------------------------------------------------------------
+
+
+def test_worker_cannot_reach_expert_dashboard(client, account):
+    _login(client, account('worker'))
+    rv = client.get('/expert_dashboard', follow_redirects=False)
+    assert rv.status_code == 302
+    assert 'expert_dashboard' not in rv.headers['Location']
+
+
+def test_visual_analyzer_is_expert_only(client, account):
+    """The Visual Analyzer is a review tool for experts."""
+    _login(client, account('worker'))
+    assert client.get('/visual_comparison', follow_redirects=False).status_code == 302
+    assert _post(client, '/visual_comparison').status_code in (302, 403)
