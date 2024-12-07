@@ -206,3 +206,79 @@ def test_visual_analyzer_is_expert_only(client, account):
     _login(client, account('worker'))
     assert client.get('/visual_comparison', follow_redirects=False).status_code == 302
     assert _post(client, '/visual_comparison').status_code in (302, 403)
+
+
+def test_visual_analyzer_allows_experts(client, account):
+    _login(client, account('expert'))
+    assert client.get('/visual_comparison').status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Per-account data isolation
+# ---------------------------------------------------------------------------
+
+
+def test_projects_are_scoped_to_their_owner(account):
+    owner = account('expert')
+    other = account('expert')
+    project_id = database.create_project(
+        owner['id'], 'Owner Site', 'desc', 'loc', '2024-01-01', '2025-12-31', 1.0, 2.0
+    )
+    assert database.get_project(owner['id'], project_id) is not None
+    # Guessing the id as a different user must not reveal it.
+    assert database.get_project(other['id'], project_id) is None
+    assert database.list_projects(other['id']) == []
+
+
+def test_cannot_open_another_users_project_over_http(client, account):
+    owner = account('expert')
+    project_id = database.create_project(
+        owner['id'], 'Private Site', 'desc', 'loc', '2024-01-01', '2025-12-31', 1.0, 2.0
+    )
+    _login(client, account('expert'))
+    rv = client.get(f'/home?project_id={project_id}', follow_redirects=False)
+    assert rv.status_code == 302
+
+
+def test_validations_are_scoped_to_their_owner(account):
+    owner = account('worker')
+    other = account('worker')
+    project_id = database.create_project(
+        owner['id'], 'S', 'd', 'l', '2024-01-01', '2025-12-31', 1.0, 2.0
+    )
+    validation_id = database.create_validation(
+        owner['id'], project_id, 'foundation', 'Excavation', 90.0, 80.0, None
+    )
+    assert database.get_validation(owner['id'], validation_id) is not None
+    assert database.get_validation(other['id'], validation_id) is None
+
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+
+
+def test_progress_is_derived_from_validation_history(account):
+    acct = account('worker')
+    project_id = database.create_project(
+        acct['id'], 'S', 'd', 'l', '2024-01-01', '2025-12-31', 1.0, 2.0
+    )
+    assert database.get_latest_validation(acct['id'], project_id) is None
+
+    database.create_validation(
+        acct['id'], project_id, 'superstructure',
+        'Structural_Frame_Erection_(framing)', 95.0, 85.0, None
+    )
+    latest = database.get_latest_validation(acct['id'], project_id)
+    assert latest['primary_stage'] == 'superstructure'
+
+    _, overall, completed = calculate_progress(
+        latest['primary_stage'], latest['specific_classification']
+    )
+    assert overall > 0
+    assert 'foundation' in completed
+
+
+# ---------------------------------------------------------------------------
+# Helper / Business Logic Tests
+# ---------------------------------------------------------------------------
