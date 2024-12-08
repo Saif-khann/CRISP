@@ -282,3 +282,46 @@ def test_progress_is_derived_from_validation_history(account):
 # ---------------------------------------------------------------------------
 # Helper / Business Logic Tests
 # ---------------------------------------------------------------------------
+
+
+def test_allowed_file():
+    """Test allowed file extensions."""
+    assert allowed_file('site_photo.jpg') is True
+    assert allowed_file('site_photo.jpeg') is True
+    assert allowed_file('site_photo.png') is True
+    assert allowed_file('site_photo.PNG') is True
+    assert allowed_file('document.pdf') is False
+    assert allowed_file('script.py') is False
+    assert allowed_file('executable.exe') is False
+    assert allowed_file('no_extension') is False
+
+
+def test_calculate_progress_foundation():
+    """Test progress calculation for foundation sub-stages."""
+    stage_prog, overall_prog, completed = calculate_progress('foundation', 'Excavation')
+    assert stage_prog == 25
+    assert overall_prog == (20 * 0.25)
+    assert completed == []
+
+    stage_prog, overall_prog, completed = calculate_progress('foundation', 'concrete_pouring')
+    # Excavation (25) + Reinforcement (25) + concrete curing (25) + concrete_pouring (25) = 100
+    assert stage_prog == 100
+    assert 'foundation' in completed
+
+
+def test_calculate_progress_invalid_stage():
+    """Test progress calculation with non-existent stage."""
+    stage_prog, overall_prog, completed = calculate_progress('invalid_stage', 'sub')
+    assert stage_prog == 0
+    assert overall_prog == 0
+    assert completed == []
+
+
+def test_progress_message_advancement():
+    """Test progress message generation when advancing stages."""
+    status, msg = get_progress_message(
+        'foundation', 'Excavation',
+        'superstructure', 'Structural_Frame_Erection_(framing)'
+    )
+    assert status == 'advanced'
+    assert 'Progress has advanced' in msg
