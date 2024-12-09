@@ -325,3 +325,50 @@ def test_progress_message_advancement():
     )
     assert status == 'advanced'
     assert 'Progress has advanced' in msg
+
+
+def test_progress_message_invalid_regression():
+    """Test progress message when attempting an invalid backward stage jump."""
+    status, msg = get_progress_message(
+        'superstructure', 'Roof_Decking',
+        'foundation', 'Excavation'
+    )
+    assert status == 'invalid'
+    assert 'Invalid progress' in msg
+
+
+def test_progress_message_same_stage():
+    """Test progress message when stage has not changed."""
+    status, msg = get_progress_message(
+        'foundation', 'Excavation',
+        'foundation', 'Excavation'
+    )
+    assert status == 'same'
+    assert 'No progress detected' in msg
+
+
+def test_rounding_is_consistent_for_exact_ties():
+    """Weighted stage math lands on exact .x5 ties constantly; the value
+    must be rounded once at the source so every consumer agrees on the
+    digit shown (Python and JavaScript round such ties differently)."""
+    _, overall, _ = calculate_progress('finishing works', 'Painting')
+    assert overall == 90.3
+    _, msg = get_progress_message(
+        'foundation', 'Excavation', 'finishing works', 'Painting'
+    )
+    assert '90.3% complete' in msg
+
+
+def test_stages_and_weights_consistency():
+    """Test that all stages have defined weights totaling 100%."""
+    total_weight = sum(stage_weights.values())
+    assert total_weight == 100
+
+    for stage, sub_dict in sub_stage_weights.items():
+        assert sum(sub_dict.values()) == 100, f"Sub-stage weights for {stage} must sum to 100"
+        assert set(sub_dict.keys()) == set(stages[stage]), f"Sub-stages for {stage} must match stage definition"
+
+
+# ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
