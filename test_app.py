@@ -372,3 +372,68 @@ def test_stages_and_weights_consistency():
 # ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
+
+
+def test_healthz(client):
+    rv = client.get('/healthz')
+    assert rv.status_code == 200
+    assert rv.get_json()['status'] == 'ok'
+
+
+# ---------------------------------------------------------------------------
+# CSRF protection
+# ---------------------------------------------------------------------------
+
+
+def test_post_without_csrf_token_is_rejected(client, account):
+    """A state-changing request with no token must not authenticate."""
+    acct = account('worker')
+    client.post(
+        '/login',
+        data={'email': acct['email'], 'password': acct['password']},
+        follow_redirects=False
+    )
+    with client.session_transaction() as sess:
+        assert 'user_id' not in sess
+
+
+def test_post_with_wrong_csrf_token_is_rejected(client, account):
+    acct = account('worker')
+    client.get('/login')
+    client.post(
+        '/login',
+        data={'email': acct['email'], 'password': acct['password'],
+              'csrf_token': 'not-the-real-token'},
+        follow_redirects=False
+    )
+    with client.session_transaction() as sess:
+        assert 'user_id' not in sess
+
+
+def test_csrf_token_accepted_via_header(client, account):
+    """AJAX callers send the token as a header instead of a form field."""
+    acct = account('expert')
+    token = _csrf(client)
+    rv = client.post(
+        '/login',
+        data={'email': acct['email'], 'password': acct['password']},
+        headers={'X-CSRFToken': token},
+        follow_redirects=False
+    )
+    assert rv.status_code == 302
+    assert 'expert_dashboard' in rv.headers['Location']
+
+
+def test_get_requests_need_no_csrf_token(client):
+    assert client.get('/login').status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Password change
+# ---------------------------------------------------------------------------
+
+
+def test_password_change_requires_correct_current_password(account):
+    acct = account('worker')
+    with pytest.raises(ValueError):
+        database.change_password(acct['id'], 'wrong-current', 'brand-new-password')
