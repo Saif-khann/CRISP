@@ -78,7 +78,6 @@ def _login(client, acct):
 # Route Tests
 # ---------------------------------------------------------------------------
 
-
 def test_unauthenticated_redirect_to_login(client):
     """Visiting root redirects to login when unauthenticated."""
     rv = client.get('/', follow_redirects=False)
@@ -123,7 +122,6 @@ def test_visual_comparison_requires_login(client):
 # was unconfigured, and inferred the role from whether "expert" appeared
 # in the email string. These tests exist so that cannot come back.
 # ---------------------------------------------------------------------------
-
 
 def test_arbitrary_credentials_are_rejected(client):
     """An unregistered email must never be granted a session."""
@@ -193,7 +191,6 @@ def test_invalid_role_is_refused():
 # Role gating
 # ---------------------------------------------------------------------------
 
-
 def test_worker_cannot_reach_expert_dashboard(client, account):
     _login(client, account('worker'))
     rv = client.get('/expert_dashboard', follow_redirects=False)
@@ -216,7 +213,6 @@ def test_visual_analyzer_allows_experts(client, account):
 # ---------------------------------------------------------------------------
 # Per-account data isolation
 # ---------------------------------------------------------------------------
-
 
 def test_projects_are_scoped_to_their_owner(account):
     owner = account('expert')
@@ -257,7 +253,6 @@ def test_validations_are_scoped_to_their_owner(account):
 # Persistence
 # ---------------------------------------------------------------------------
 
-
 def test_progress_is_derived_from_validation_history(account):
     acct = account('worker')
     project_id = database.create_project(
@@ -282,7 +277,6 @@ def test_progress_is_derived_from_validation_history(account):
 # ---------------------------------------------------------------------------
 # Helper / Business Logic Tests
 # ---------------------------------------------------------------------------
-
 
 def test_allowed_file():
     """Test allowed file extensions."""
@@ -373,7 +367,6 @@ def test_stages_and_weights_consistency():
 # Health check
 # ---------------------------------------------------------------------------
 
-
 def test_healthz(client):
     rv = client.get('/healthz')
     assert rv.status_code == 200
@@ -383,7 +376,6 @@ def test_healthz(client):
 # ---------------------------------------------------------------------------
 # CSRF protection
 # ---------------------------------------------------------------------------
-
 
 def test_post_without_csrf_token_is_rejected(client, account):
     """A state-changing request with no token must not authenticate."""
@@ -432,8 +424,72 @@ def test_get_requests_need_no_csrf_token(client):
 # Password change
 # ---------------------------------------------------------------------------
 
-
 def test_password_change_requires_correct_current_password(account):
     acct = account('worker')
     with pytest.raises(ValueError):
         database.change_password(acct['id'], 'wrong-current', 'brand-new-password')
+
+
+def test_password_change_rejects_short_new_password(account):
+    acct = account('worker')
+    with pytest.raises(ValueError):
+        database.change_password(acct['id'], acct['password'], 'short')
+
+
+def test_password_change_rejects_reusing_the_same_password(account):
+    acct = account('worker')
+    with pytest.raises(ValueError):
+        database.change_password(acct['id'], acct['password'], acct['password'])
+
+
+def test_password_change_succeeds_and_old_password_stops_working(account):
+    acct = account('worker')
+    database.change_password(acct['id'], acct['password'], 'a-brand-new-password')
+    assert database.verify_user(acct['email'], acct['password']) is None
+    assert database.verify_user(acct['email'], 'a-brand-new-password') is not None
+
+
+def test_account_page_requires_login(client):
+    rv = client.get('/account', follow_redirects=False)
+    assert rv.status_code == 302
+
+
+def test_account_page_renders_for_signed_in_user(client, account):
+    _login(client, account('worker'))
+    assert client.get('/account').status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Login throttling and audit log
+# ---------------------------------------------------------------------------
+
+def test_failed_logins_are_recorded_in_the_audit_log(client, account):
+    acct = account('worker')
+    _post(client, '/login', {'email': acct['email'], 'password': 'wrong'})
+    events = database.list_auth_events(limit=20, email=acct['email'])
+    assert any(e['event'] == 'login_failed' for e in events)
+
+
+def test_successful_login_is_recorded_in_the_audit_log(client, account):
+    acct = account('expert')
+    _login(client, acct)
+    events = database.list_auth_events(limit=20, email=acct['email'])
+    assert any(e['event'] == 'login_success' for e in events)
+
+
+def test_throttle_counter_persists_in_the_database(client, account):
+    """The lockout must survive a restart, so it cannot live in a dict."""
+    acct = account('worker')
+    for _ in range(3):
+        _post(client, '/login', {'email': acct['email'], 'password': 'wrong'})
+
+    with database.get_connection() as conn:
+        row = conn.execute('SELECT SUM(attempts) AS total FROM login_attempts').fetchone()
+    assert row['total'] >= 3
+
+
+def test_security_headers_are_set(client):
+    rv = client.get('/login')
+    assert rv.headers.get('X-Content-Type-Options') == 'nosniff'
+    assert rv.headers.get('X-Frame-Options') == 'DENY'
+    assert 'Referrer-Policy' in rv.headers
