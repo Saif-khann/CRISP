@@ -3,6 +3,11 @@
  * Modern Client-side Controller with Smooth Async Validation & Comparison
  */
 
+// The CSRF token is rendered into a meta tag by base.html. Requests that
+// build FormData by hand (rather than from a <form> containing the hidden
+// field) must send it as a header instead.
+const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
 document.addEventListener('DOMContentLoaded', function() {
     // --------------------------------------------------------------------------
     // Image Validation Form Submission
@@ -31,7 +36,11 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
 
             try {
-                const response = await fetch(validationForm.action, { method: 'POST', body: formData });
+                const response = await fetch(validationForm.action, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': CSRF_TOKEN },
+                    body: formData
+                });
                 const result = await response.json();
 
                 if (result.success) {
@@ -154,7 +163,11 @@ document.addEventListener('DOMContentLoaded', function() {
             formData.append('current_doc_id', currId);
 
             try {
-                const response = await fetch('/compare', { method: 'POST', body: formData });
+                const response = await fetch('/compare', {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': CSRF_TOKEN },
+                    body: formData
+                });
                 const data = await response.json();
 
                 if (data.success) {

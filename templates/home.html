@@ -115,6 +115,7 @@
                     </div>
 
                     <form action="{{ url_for('validate_image') }}" method="POST" enctype="multipart/form-data" id="validationForm">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <input type="hidden" id="project-id" name="project_id" value="{{ project.id }}">
                         
                         <!-- Upload Dropzone -->
