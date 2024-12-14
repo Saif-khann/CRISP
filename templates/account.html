@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Account - CRISP{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+
+            <div class="mb-4">
+                <h2 class="fw-bold tracking-tight mb-1">Account</h2>
+                <p class="text-muted small mb-0">
+                    Signed in as <strong>{{ session.get('email') }}</strong>
+                    <span class="badge badge-primary ms-1">{{ session.get('role')|title }}</span>
+                </p>
+            </div>
+
+            <!-- Change password -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-white d-flex align-items-center gap-2">
+                    <i class="fas fa-key text-primary"></i>
+                    <span class="fw-bold">Change password</span>
+                </div>
+                <div class="card-body p-4">
+                    <form method="POST" action="{{ url_for('account') }}" autocomplete="off">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <div class="mb-3">
+                            <label for="current_password" class="form-label small fw-semibold text-muted text-uppercase">Current password</label>
+                            <input type="password" class="form-control" id="current_password"
+                                   name="current_password" required autocomplete="current-password">
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label for="new_password" class="form-label small fw-semibold text-muted text-uppercase">New password</label>
+                                <input type="password" class="form-control" id="new_password"
+                                       name="new_password" required minlength="8" autocomplete="new-password">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="confirm_password" class="form-label small fw-semibold text-muted text-uppercase">Confirm new password</label>
+                                <input type="password" class="form-control" id="confirm_password"
+                                       name="confirm_password" required minlength="8" autocomplete="new-password">
+                            </div>
+                        </div>
+                        <p class="small text-muted mb-3" style="opacity: 0.8;">
+                            Minimum 8 characters. Changing your password does not sign you out of this session.
+                        </p>
+                        <button type="submit" class="btn btn-primary">Update password</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Sign-in activity -->
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-clock-rotate-left text-primary"></i>
+                        <span class="fw-bold">Recent account activity</span>
+                    </div>
+                    <span class="badge bg-light text-muted border">{{ events|length }} events</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if events %}
+                    <div class="table-responsive">
+                        <table class="table align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>When</th>
+                                    <th>Event</th>
+                                    <th>IP address</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for event in events %}
+                                <tr>
+                                    <td class="small text-muted">
+                                        {{ event.timestamp.strftime('%b %d, %Y %H:%M UTC') if event.timestamp else 'Unknown' }}
+                                    </td>
+                                    <td>
+                                        {% set tone = 'success' if event.event in ['login_success', 'signup', 'password_changed']
+                                                      else 'danger' if 'failed' in event.event or 'blocked' in event.event
+                                                      else 'primary' %}
+                                        <span class="badge badge-{{ tone }}">{{ event.event.replace('_', ' ')|title }}</span>
+                                    </td>
+                                    <td class="small text-muted font-monospace">{{ event.ip_address or 'unknown' }}</td>
+                                    <td class="small text-muted">{{ event.detail or '' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4 text-muted small">No activity recorded yet.</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <p class="small text-muted mt-3 mb-0" style="opacity: 0.75;">
+                Every sign-in, failed attempt and password change is recorded here,
+                so unexpected activity on your account is visible to you.
+            </p>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
