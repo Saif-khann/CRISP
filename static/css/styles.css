@@ -591,3 +591,40 @@ body {
     margin-bottom: 0.75rem;
 }
 
+/* --------------------------------------------------------------------------
+   Subtle Animations
+   -------------------------------------------------------------------------- */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Applied automatically so every card/stat-tile on a page enters the
+   same subtle way, instead of motion only showing up on a couple of
+   JS-injected panels. Respects reduced-motion preferences. */
+.card,
+.stat-card {
+    animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .card,
+    .stat-card,
+    .animate-fade-in,
+    .pulse-active {
+        animation: none;
+    }
+}
+
+@keyframes pulseGlow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.2); }
+    50% { box-shadow: 0 0 0 8px rgba(37, 99, 235, 0); }
+}
+
+.pulse-active {
+    animation: pulseGlow 2s infinite;
+}
