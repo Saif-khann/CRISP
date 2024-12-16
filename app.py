@@ -151,8 +151,49 @@ def missing_model_files():
             if not os.path.exists(os.path.join('models', name))]
 
 
+STAGE_MODEL_FILES = {
+    "foundation": "Foundation_mobile.keras",
+    "superstructure": "Superstructure_mobile.keras",
+    "facade": "Facade_inception.keras",
+    "Interior": "Interior_mobile.keras",
+    "finishing works": "finishing_mobile.keras",
+}
+
+# Disk footprint of the three ensemble models, for the startup log.
+_ENSEMBLE_DISK_MB = 369
+
+
+def get_stage_model(stage):
+    """Return the sub-stage model for a stage, loading it on first use.
+
+    Only one of the five is needed per validation, and a typical session
+    touches one or two stages. Loading all five up front adds roughly
+    285 MB of resident memory and several seconds to the first request for
+    models most sessions never call.
+    """
+    if stage in stage_specific_models:
+        return stage_specific_models[stage]
+
+    filename = STAGE_MODEL_FILES.get(stage)
+    if filename is None:
+        raise ValueError(f"Unknown stage: {stage}")
+
+    import tensorflow as tf
+    path = os.path.join('models', filename)
+    if not os.path.exists(path):
+        raise ValueError(f"Missing model weights: {path}")
+
+    logger.info("Loading stage model for %r", stage)
+    model = tf.keras.models.load_model(path, compile=False)
+    stage_specific_models[stage] = model
+    return model
+
+
 def load_models():
-    """Load all ML models. Called on first request, not at import time."""
+    """Load the ensemble models. Called on first request, not at import time.
+
+    Stage-specific models are loaded lazily by get_stage_model().
+    """
     global global_mobilenet, global_inception, global_vgg
     global stage_specific_models, MODELS_LOADED
 
@@ -182,26 +223,11 @@ def load_models():
             "models/vgg16.keras", compile=False
         )
 
-        stage_specific_models.update({
-            "foundation": tf.keras.models.load_model(
-                "models/Foundation_mobile.keras", compile=False
-            ),
-            "superstructure": tf.keras.models.load_model(
-                "models/Superstructure_mobile.keras", compile=False
-            ),
-            "facade": tf.keras.models.load_model(
-                "models/Facade_inception.keras", compile=False
-            ),
-            "Interior": tf.keras.models.load_model(
-                "models/Interior_mobile.keras", compile=False
-            ),
-            "finishing works": tf.keras.models.load_model(
-                "models/finishing_mobile.keras", compile=False
-            ),
-        })
-
         MODELS_LOADED = True
-        logger.info("All ML models loaded successfully")
+        logger.info(
+            "Ensemble models loaded (%.0f MB on disk). Stage-specific models "
+            "load on first use.", _ENSEMBLE_DISK_MB
+        )
     except Exception as e:
         logger.error("Error loading models: %s", e)
         MODELS_LOADED = False
@@ -472,8 +498,8 @@ def classify_stage(image, selected_stage):
     """Classify the sub-stage within a given stage."""
     import tensorflow as tf
 
-    if not MODELS_LOADED or selected_stage not in stage_specific_models:
-        raise ValueError("Models not loaded or invalid stage")
+    if not MODELS_LOADED:
+        raise ValueError("Models not loaded")
 
     if selected_stage == "facade":
         preprocessed = tf.image.resize(image, (299, 299))
@@ -483,7 +509,7 @@ def classify_stage(image, selected_stage):
     preprocessed = tf.cast(preprocessed, tf.float32) / 255.0
     preprocessed = tf.expand_dims(preprocessed, axis=0)
 
-    model = stage_specific_models[selected_stage]
+    model = get_stage_model(selected_stage)
     predictions = model.predict(preprocessed, verbose=0)[0]
 
     predicted_index = np.argmax(predictions)
