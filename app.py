@@ -167,7 +167,7 @@ def get_stage_model(stage):
     """Return the sub-stage model for a stage, loading it on first use.
 
     Only one of the five is needed per validation, and a typical session
-    touches one or two stages. Loading all five up front adds roughly
+    touches one or two stages. Loading all five up front would add roughly
     285 MB of resident memory and several seconds to the first request for
     models most sessions never call.
     """
@@ -506,7 +506,6 @@ def ensemble_predict(image):
     mobilenet_output = _infer(global_mobilenet, batch_224)
     inception_output = _infer(global_inception, batch_299)
     vgg_output = _infer(global_vgg, batch_224)
-
 
     ensemble_output = (
         0.3 * mobilenet_output +
@@ -1176,7 +1175,13 @@ def validate_image():
         filepath = _save_upload(file)
 
         try:
-            image = Image.open(filepath).convert('RGB')
+            image = Image.open(filepath)
+            # The largest model input is 299x299, so a full-resolution decode
+            # of a 12 MP phone photo is wasted work. draft() lets the JPEG
+            # decoder downscale while decoding, which is far cheaper than
+            # decoding then resizing.
+            image.draft('RGB', (640, 640))
+            image = image.convert('RGB')
         except Exception:
             return jsonify({'success': False, 'error': 'That file could not be read as an image.'}), 400
 
