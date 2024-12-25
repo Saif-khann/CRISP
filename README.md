@@ -47,6 +47,9 @@ dashboard traces back to a specific photograph.
 </td></tr>
 </table>
 
+### Contents
+
+[Features](#features) · [Architecture](#architecture)
 ---
 
 ## Features
@@ -60,3 +63,37 @@ dashboard traces back to a specific photograph.
 | **Audit reports** | Any validation exports as a PDF containing the photograph, classification, confidence figures and progress state. |
 | **Site map** | GPS-tagged projects plotted on an interactive map. |
 | **Account management** | Self-service password change, plus recent sign-in activity including failed attempts and originating IP. |
+
+---
+
+## Architecture
+
+```
+Browser
+   │   HTML (Jinja2) + fetch() for validation and comparison
+   ▼
+Flask application  (app.py)
+   │
+   ├── auth.py         sessions, CSRF, role gating, login throttling
+   ├── database.py     SQLite persistence, every query scoped by owner
+   ├── vision.py       photo-to-photo change detection (OpenCV/NumPy)
+   ├── seed_demo.py    demo account and sample project seeding
+   │
+   ├── TensorFlow/Keras   8 CNN models, lazy-loaded on first inference
+   └── ReportLab          PDF audit report generation
+   │
+   ▼
+SQLite  (data/crisp.db)
+```
+
+Three deliberate properties of this layout:
+
+- **Nothing touches TensorFlow at import time.** The server accepts
+  requests immediately; the roughly 5 second ensemble load happens on the
+  first request that actually needs inference. Pages that only read stored
+  results never trigger it.
+- **Persistence is isolated behind `database.py`.** Routes never build SQL.
+  Swapping SQLite for Postgres means rewriting one module.
+- **Progress is computed, not stored.** Denormalised progress fields would
+  drift out of sync with validation history. Deriving them on read makes
+  that impossible.
