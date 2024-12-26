@@ -49,7 +49,8 @@ dashboard traces back to a specific photograph.
 
 ### Contents
 
-[Features](#features) · [Architecture](#architecture)
+[Features](#features) · [Architecture](#architecture) ·
+[Construction model](#construction-model)
 ---
 
 ## Features
@@ -97,3 +98,44 @@ Three deliberate properties of this layout:
 - **Progress is computed, not stored.** Denormalised progress fields would
   drift out of sync with validation history. Deriving them on read makes
   that impossible.
+
+---
+
+## Construction model
+
+Five weighted phases, each subdivided into weighted sub-stages. Both levels
+sum to 100%.
+
+| # | Stage | Weight | Sub-stages (weight within stage) |
+|:-:|-------|:------:|----------------------------------|
+| 1 | Foundation | 20% | Excavation (25), Reinforcement Placement (25), Concrete Curing (25), Concrete Pouring (25) |
+| 2 | Superstructure | 30% | Structural Frame Erection (40), Structural Wall Construction (25), Stair Case (20), Roof Decking (15) |
+| 3 | Facade | 20% | Exterior Wall Construction (40), Window &amp; Door Installation (35), Exterior Cladding &amp; Finishes (25) |
+| 4 | Interior | 15% | Ceiling Installation (35), Flooring Installation (35), Staircase Finishing (30) |
+| 5 | Finishing Works | 15% | Painting (35), Fixture Installation (35), Millwork &amp; Carpentry (30) |
+
+**Overall completion** = sum of fully completed stage weights, plus the
+current stage's weight scaled by its own sub-stage progress.
+
+```
+Project at Finishing Works / Painting
+
+Foundation      100%  ->  20.0
+Superstructure  100%  ->  30.0
+Facade          100%  ->  20.0
+Interior        100%  ->  15.0
+Finishing        35%  ->  15.0 x 0.35 = 5.25
+                         ─────────────────
+                                     90.25  ->  90.3%
+```
+
+Sub-stages are cumulative within a stage: reaching sub-stage *n* implies
+1..*n* are complete. Stages advance in order; a comparison that moves
+backwards is reported as `invalid` rather than as a negative delta.
+
+> **On that `90.25`.** Weighted integer percentages land on exact `.x5` ties
+> constantly. Python's `%.1f` uses banker's rounding (to even) while
+> JavaScript's `toFixed(1)` rounds half away from zero, so the same value
+> rendered server-side and client-side disagreed: 90.2 against 90.3. It is
+> now rounded once at source in `calculate_progress()` using round-half-up,
+> so every consumer displays the same digit. A regression test pins it.
