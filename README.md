@@ -50,7 +50,8 @@ dashboard traces back to a specific photograph.
 ### Contents
 
 [Features](#features) · [Architecture](#architecture) ·
-[Construction model](#construction-model)
+[Construction model](#construction-model) ·
+[ML pipeline](#machine-learning-pipeline)
 ---
 
 ## Features
@@ -139,3 +140,54 @@ backwards is reported as `invalid` rather than as a negative delta.
 > rendered server-side and client-side disagreed: 90.2 against 90.3. It is
 > now rounded once at source in `calculate_progress()` using round-half-up,
 > so every consumer displays the same digit. A regression test pins it.
+
+---
+
+## Machine learning pipeline
+
+### Stage 1: ensemble phase classification
+
+Three ImageNet-pretrained backbones vote on which of the five phases an
+image shows, using fixed weights:
+
+| Model | Input | Weight |
+|-------|:-----:|:------:|
+| MobileNetV2 | 224x224 | 0.30 |
+| InceptionV3 | 299x299 | 0.40 |
+| VGG16 | 224x224 | 0.30 |
+
+Softmax outputs are combined as a weighted sum. `argmax` gives the phase;
+the value at that index is the confidence.
+
+### Stage 2: sub-stage classification
+
+The predicted phase selects a dedicated model, which classifies the
+sub-stage within that phase only. Four use a MobileNetV2 backbone; Facade
+uses InceptionV3 at 299x299.
+
+This two-tier design is why sub-stage confidence runs far higher than phase
+confidence. The second model separates 3 to 4 visually distinct activities
+that already share a construction context, rather than discriminating
+across the whole project lifecycle.
+
+### Stage 3: description
+
+Photograph descriptions come from a three-tier fallback:
+
+1. **Any OpenAI-compatible vision gateway**, if `AI_GATEWAY_URL` is set.
+   Works with a self-hosted runtime (Ollama, LocalAI, vLLM) or any hosted
+   provider exposing an OpenAI-compatible `/v1` endpoint. The image is sent
+   as a base64 data URL with its real MIME type.
+2. **Google Gemini**, if `GOOGLE_API_KEY` is set.
+3. **An offline generator** keyed on the classified stage and sub-stage.
+
+Tier 3 is the default and needs no API key, no account and no network. The
+application is fully functional with zero external services configured.
+Each tier falls through to the next on timeout, HTTP error or malformed
+response, so a misconfigured gateway degrades rather than breaking
+validation. The tier actually in use is logged at startup.
+
+Two practical notes. The configured model must accept image input; a
+text-only model is rejected by the endpoint and CRISP falls back. And a
+gateway bound to localhost is not reachable from a deployed container, so a
+deployment either points at a hosted endpoint or uses the offline generator.
