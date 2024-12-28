@@ -51,7 +51,8 @@ dashboard traces back to a specific photograph.
 
 [Features](#features) · [Architecture](#architecture) ·
 [Construction model](#construction-model) ·
-[ML pipeline](#machine-learning-pipeline)
+[ML pipeline](#machine-learning-pipeline) ·
+[Change detection](#change-detection-pipeline)
 ---
 
 ## Features
@@ -191,3 +192,51 @@ Two practical notes. The configured model must accept image input; a
 text-only model is rejected by the endpoint and CRISP falls back. And a
 gateway bound to localhost is not reachable from a deployed container, so a
 deployment either points at a hosted endpoint or uses the offline generator.
+
+---
+
+## Change detection pipeline
+
+Comparing two site photographs taken days or weeks apart is not a pixel
+subtraction problem. The naive version of this feature highlighted the
+entire frame whenever the weather differed between visits, because a sunny
+photograph and an overcast one differ in nearly every pixel.
+
+The current pipeline (`vision.py`):
+
+| # | Step | Purpose |
+|:-:|------|---------|
+| 1 | ORB features + RANSAC homography | Aligns the photos so drone repositioning is not read as change |
+| 2 | Linear gain/offset matching, then CLAHE | Removes exposure and white-balance differences between visits |
+| 3 | Local SSIM as `(1 - SSIM) / 2` | Compares *structure*, not brightness. A wall that merely got brighter scores near zero; a wall that appeared scores high |
+| 4 | Construction-region masking | Restricts results to built structure, excluding sky, vegetation and smooth ground |
+| 5 | Otsu threshold with an absolute floor | Adapts to the image while preventing noise being promoted to "change" on an unchanged site |
+| 6 | Morphological open/close, hole fill, component-area filter | Produces contiguous regions rather than speckle |
+| 7 | Tinted fill plus contour outline | Shows what changed, and where its boundary is |
+
+### Separating sky from concrete
+
+The hardest part is that pale concrete and white cladding are bright and
+desaturated, exactly like an overcast sky. A brightness-only rule swallows
+the buildings the feature exists to analyse. During development a
+brightness-and-connectivity mask consumed **74%** of a newly-added
+structure.
+
+Sky is therefore identified by three properties *together*:
+
+- Bright and desaturated, **or** blue-hued
+- **Textureless**, meaning local edge density below threshold. Buildings carry
+  edges, openings and panel lines even when flat-toned; sky does not
+- **Top-anchored**, with the component's centroid in the upper third. A
+  region that merely grazes the top edge but extends far down is a building
+
+Adding the texture test took detection of the new structure from 31% to
+**100%**.
+
+### Optional semantic segmentation
+
+If `models/segformer.onnx` is present, the region mask comes from SegFormer
+semantic segmentation instead of the heuristic. Preprocessing is
+implemented in NumPy, so this path needs `onnxruntime` alone: no PyTorch,
+no `transformers`. The application reports which method actually ran on
+every comparison rather than claiming a capability it did not use.
