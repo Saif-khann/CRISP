@@ -53,7 +53,9 @@ dashboard traces back to a specific photograph.
 [Construction model](#construction-model) ·
 [ML pipeline](#machine-learning-pipeline) ·
 [Change detection](#change-detection-pipeline) ·
-[Metrics](#technical-metrics)
+[Metrics](#technical-metrics) · [Security](#security-model) ·
+[Quick start](#quick-start) · [Configuration](#configuration) ·
+[Testing](#testing) · [Deployment](#deployment)
 ---
 
 ## Features
@@ -467,3 +469,250 @@ produces essentially zero reported progress.
 | Jinja2 templates (10 files) | 1,553 |
 | CSS + JavaScript | 848 |
 | **Total** | **~6,079** |
+
+---
+
+## Security model
+
+| Area | Implementation |
+|------|----------------|
+| Password storage | scrypt via Werkzeug (`scrypt:32768:8:1`). Plaintext is never stored |
+| Credential verification | Constant-work: a dummy hash comparison runs even when the account does not exist, so a missing account and a wrong password take the same time |
+| Login throttling | 8 failures per IP + email pair, then a 5 minute lockout |
+| Throttle storage | Persisted in the database, so a lockout survives a restart and is shared across workers instead of resetting |
+| Session cookies | `HttpOnly`, `SameSite=Lax`, `Secure` in production, 12 hour lifetime |
+| CSRF | Per-session tokens on every state-changing request, enforced globally in a `before_request` hook so a new route is protected by default. Accepted as a form field or an `X-CSRFToken` header. Compared in constant time |
+| Audit log | Append-only `auth_events` table recording sign-ins, failures, lockouts, sign-outs, registrations and password changes with IP and user agent. Surfaced to each user on their account page |
+| Password changes | Self-service, requiring the current password, refusing reuse of the existing one |
+| Response headers | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, plus HSTS in production |
+| Data isolation | Every project and validation query is scoped by `user_id`. Guessing another account's record ID returns nothing |
+| Secret key | The application refuses to start in production without `FLASK_SECRET_KEY`. Development generates a random per-process key rather than using a shared hardcoded default |
+| Upload handling | Extension allowlist, 10 MB cap, randomised filenames, content validated by attempting an image decode |
+| Error disclosure | Login failures never reveal whether the email exists |
+| Role enforcement | Enforced at the route via decorator, not by hiding navigation links |
+
+---
+
+## Quick start
+
+**Requirements:** Python 3.10 or newer, and roughly 2 GB of free disk
+(655 MB of models plus about 1.2 GB of dependencies, TensorFlow being the
+bulk).
+
+```bash
+git clone https://github.com/Saif-khann/CRISP.git
+cd CRISP
+```
+
+```bash
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
+```
+
+```bash
+pip install -r requirements.txt
+```
+
+Expect roughly 7 minutes on a clean environment; the TensorFlow wheel alone
+is 332 MB.
+
+```bash
+python download_models.py
+```
+
+Fetches all 8 files (655 MB) from the GitHub Release. Re-running skips
+whatever is already present. Verify at any point with
+`python download_models.py --check`.
+
+```bash
+cp .env.example .env
+```
+
+Every value has a working default for local use. **No API keys are
+required.** Generate a secret key with:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Then run it:
+
+```bash
+python app.py
+```
+
+Open `http://localhost:5000`. The database is created and the demo accounts
+seeded on first boot; `python init_db.py` does the same thing explicitly if
+you prefer.
+
+### Production
+
+```bash
+gunicorn --bind 0.0.0.0:5000 --workers 1 --threads 4 --timeout 180 app:app
+```
+
+Use **one worker per instance** for the memory reason above; scale by
+adding instances. The long timeout accommodates the first-request model
+load: about 5 seconds for the ensemble, plus up to 1.8 seconds the first
+time a given stage model is needed.
+
+### Demo accounts
+
+| Role | Email | Password |
+|------|-------|----------|
+| Expert | `demo.expert@crisp.local` | `crisp-demo-expert` |
+| Worker | `demo.worker@crisp.local` | `crisp-demo-worker` |
+
+Real accounts with hashed passwords that authenticate through the normal
+login path, not an authentication bypass. They arrive pre-seeded with
+three projects and validation history so the comparison and reporting
+features have data to work with. Set `ALLOW_DEMO_LOGIN=false` to disable
+them entirely, which also removes the one-click buttons from the sign-in
+page.
+
+### Roles
+
+| Capability | Worker | Expert |
+|------------|:------:|:------:|
+| Create and view own projects | yes | yes |
+| Upload and validate site photographs | yes | yes |
+| Compare milestones, export PDF reports | yes | yes |
+| Site map | yes | yes |
+| Change own password, view own sign-in history | yes | yes |
+| Visual change analyzer | no | yes |
+
+---
+
+## Configuration
+
+Every setting is an environment variable, read from `.env` or the process
+environment. **The application runs fully with none of them set**, apart
+from `FLASK_SECRET_KEY` being mandatory in production.
+
+<details>
+<summary><strong>All environment variables</strong></summary>
+
+<br>
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `FLASK_SECRET_KEY` | random per process | Signs session cookies. **Required in production** |
+| `CRISP_ENV` | `development` | `production` enables secure cookies and enforces the key requirement |
+| `CRISP_DB_PATH` | `data/crisp.db` | SQLite location |
+| `ALLOW_DEMO_LOGIN` | `true` | Seeds demo accounts, shows demo buttons |
+| `DEMO_EXPERT_PASSWORD` | `crisp-demo-expert` | Override the seeded password |
+| `DEMO_WORKER_PASSWORD` | `crisp-demo-worker` | Override the seeded password |
+| `AI_GATEWAY_URL` | unset | OpenAI-compatible endpoint for descriptions |
+| `AI_GATEWAY_KEY` | unset | Key for the above |
+| `AI_GATEWAY_MODEL` | `gpt-4o-mini` | Model name for the above |
+| `AI_GATEWAY_TIMEOUT` | `30` | Seconds before falling back to the offline generator |
+| `GOOGLE_API_KEY` | unset | Gemini key for descriptions |
+| `APP_TIMEZONE` | `UTC` | Timestamp display timezone |
+| `PORT` | `5000` | Listen port |
+| `HOST` | `127.0.0.1` dev, `0.0.0.0` prod | Bind address |
+| `FLASK_DEBUG` | `false` | Flask debug mode |
+| `CRISP_MODELS_REPO` | `Saif-khann/CRISP` | Where `download_models.py` fetches from |
+| `CRISP_MODELS_TAG` | `models-v1` | Release tag to fetch |
+
+</details>
+
+**Do I need any API keys? No.** Photograph descriptions fall back to an
+offline generator that needs no network access. `AI_GATEWAY_*` and
+`GOOGLE_API_KEY` only substitute a language model for that generator, and
+are entirely optional.
+
+---
+
+## Testing
+
+```bash
+pytest test_app.py -v
+```
+
+**44 tests in 5.5 seconds**, covering authentication, role gating,
+per-account data isolation, progress arithmetic, rounding consistency and
+the health endpoint. The suite runs against a temporary database and never
+touches `data/crisp.db`.
+
+Model weights are **not** required; nothing in the suite performs
+inference.
+
+The suite includes explicit regression guards for every defect found during
+development: arbitrary credentials being accepted, role being inferred from
+the email address, cross-account data access, the visual analyzer being
+reachable by non-experts, CSRF-less POSTs being honoured, and the rounding
+tie described above. A further 69 live HTTP checks run against a started
+server.
+
+---
+
+## Project structure
+
+<details>
+<summary><strong>File layout</strong></summary>
+
+<br>
+
+```
+CRISP/
+├── app.py                      Flask application, routes, inference, progress
+├── database.py                 SQLite persistence layer
+├── auth.py                     Session guards, role gating, login throttling
+├── vision.py                   Photo-to-photo change detection
+├── seed_demo.py                Demo account and sample project seeding
+├── init_db.py                  Database setup utility
+├── download_models.py          Fetches model weights from GitHub Releases
+├── build_models.py             CNN architecture build script
+├── test_app.py                 Test suite
+├── requirements.txt
+├── Dockerfile                  Production container
+├── SPACE_README.md             Hugging Face Spaces deployment guide
+├── .env.example
+├── data/                       SQLite database (gitignored)
+├── models/                     Model weights (gitignored, fetched separately)
+├── static/
+│   ├── css/styles.css          Design system
+│   ├── js/main.js              Validation and comparison client logic
+│   ├── demo_samples/           Five reference construction photographs
+│   └── uploads/                Uploaded site photographs (gitignored)
+└── templates/
+    ├── base.html               Layout, navigation, flash messages
+    ├── login.html              Sign in, application entry point
+    ├── signup.html             Registration
+    ├── home.html               Project workspace: validate and compare
+    ├── expert_dashboard.html
+    ├── worker_dashboard.html
+    ├── visual_comparison.html  Change analyzer, expert only
+    ├── geo_map.html
+    ├── account.html            Password change and sign-in history
+    └── error.html
+```
+
+</details>
+
+---
+
+## Deployment
+
+The included `Dockerfile` produces a production image: non-root user,
+`/healthz` healthcheck, `PORT`-aware, single Gunicorn worker.
+
+**Hugging Face Spaces (Docker SDK)** is the recommended free host. Its free
+CPU tier provides 2 vCPU and 16 GB RAM, comfortably above the ~1 GB working
+set. See [SPACE_README.md](SPACE_README.md).
+
+Render, Koyeb and Fly.io free web service tiers cap at 512 MB RAM and
+**cannot run this application** as configured.
+
+Two deployment facts worth stating plainly:
+
+- `FLASK_SECRET_KEY` must be set. The application refuses to start without
+  it in production rather than silently signing cookies with a throwaway
+  key.
+- Container filesystems are ephemeral. `data/crisp.db` is destroyed on
+  rebuild, so accounts created through the UI do not survive. Demo accounts
+  re-seed on every boot. For durable data, mount persistent storage or
+  point `CRISP_DB_PATH` at a managed database.
