@@ -55,7 +55,9 @@ dashboard traces back to a specific photograph.
 [Change detection](#change-detection-pipeline) ·
 [Metrics](#technical-metrics) · [Security](#security-model) ·
 [Quick start](#quick-start) · [Configuration](#configuration) ·
-[Testing](#testing) · [Deployment](#deployment)
+[Testing](#testing) · [Deployment](#deployment) ·
+[Limitations](#observations-and-limitations)
+
 ---
 
 ## Features
@@ -716,3 +718,118 @@ Two deployment facts worth stating plainly:
   rebuild, so accounts created through the UI do not survive. Demo accounts
   re-seed on every boot. For durable data, mount persistent storage or
   point `CRISP_DB_PATH` at a managed database.
+
+---
+
+## Observations and limitations
+
+Recorded honestly, because knowing where a system is weak is more useful
+than a list of features. Split into constraints inherent to the problem and
+choices made deliberately, rather than presented as an undifferentiated
+list of faults.
+
+<details>
+<summary><strong>Inherent to the trained models</strong></summary>
+
+<br>
+
+These cannot be fixed in application code. They need training data and a
+labelled evaluation set, neither of which ships with this project.
+
+1. **Phase confidence is modest.** 60 to 87% across the bundled samples,
+   against 97 to 100% for sub-stages. The gap is structural: the ensemble
+   discriminates across the whole project lifecycle, while the sub-stage
+   model only separates 3 or 4 activities that already share a context. The
+   practical consequence is that the mismatch check occasionally fires on a
+   legitimate photograph, which is why the recorded override exists.
+
+2. **No held-out evaluation metrics.** The weights come from an earlier
+   training run with no preserved validation split, so there are no
+   accuracy, precision or recall figures on unseen data. The confidence
+   numbers in this README are inference outputs on five photographs: a
+   smoke test, not an evaluation.
+
+3. **`build_models.py` builds architectures, not the shipped weights.** It
+   constructs untrained ImageNet-backbone models. It is scaffolding for
+   retraining, not a reproduction of the release artefacts.
+
+</details>
+
+<details>
+<summary><strong>Deliberate engineering choices</strong></summary>
+
+<br>
+
+4. **SQLite, not a networked database.** Correct, durable and fast for a
+   single instance, which is what this application is sized for at roughly
+   1 GB per worker. Horizontal scaling would need Postgres. Every query is
+   isolated behind `database.py` specifically so that swap is a
+   single-module change.
+
+5. **The change-detection region mask is heuristic.** Colour, texture and
+   geometry rules approximate "this is built structure". A trained
+   segmentation model would be more robust, and the SegFormer path exists
+   for exactly that, but the weights are a large separate artefact. The
+   heuristic measures 0.1% false positive on a pure lighting change and
+   100% recall on a real structural addition, which is good enough to ship
+   as the default.
+
+6. **No Content-Security-Policy header.** The templates use inline scripts
+   and CDN-hosted Bootstrap and Leaflet. A policy permissive enough to
+   allow those would not meaningfully constrain anything, so the header is
+   omitted rather than claimed. Fixing it properly means moving scripts to
+   external files and self-hosting the vendor assets.
+
+7. **Precision on change detection is 82.8%, not 100%.** Some highlighting
+   lands just outside a changed structure, mostly at boundaries where
+   alignment is imperfect.
+
+8. **Change detection needs comparable viewpoints.** Photographs of
+   different parts of a site, or from wildly different angles, will not
+   align. The interface says so rather than producing a confident-looking
+   but meaningless result.
+
+</details>
+
+<details>
+<summary><strong>Product scope</strong></summary>
+
+<br>
+
+9. **Projects are private to their creator.** There is no sharing, no team
+   or organisation concept, and no way for an expert to review a worker's
+   projects. Both roles see only what they created. This is the most
+   obvious gap relative to how the two roles are described, and closing it
+   means designing an ownership and permission model, not just adding a
+   query.
+
+10. **No password reset by email.** Users can change their password while
+    signed in, and every change is audited, but a forgotten password has no
+    self-service recovery path because the project ships no mail
+    infrastructure. Adding it means an SMTP dependency and a token-expiry
+    flow.
+
+11. **No email verification on registration.** Addresses are unique and
+    validated for format, but not proven to belong to the registrant.
+
+</details>
+
+<details>
+<summary><strong>Previously listed, now resolved</strong></summary>
+
+<br>
+
+For the record, the following were open in earlier revisions and are
+closed: CSRF tokens are now enforced globally; login throttling is
+persisted in the database rather than process memory; authentication events
+are written to a queryable audit table and surfaced in the interface; users
+can change their own password; and standard security response headers are
+set.
+
+</details>
+
+---
+
+## License
+
+MIT.
